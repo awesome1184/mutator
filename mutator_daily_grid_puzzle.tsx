@@ -47,7 +47,7 @@ function toHostElement(node) {
 // ============================================================================
 
 const GRID_SIZE = 7;
-const RULES_VERSION = 3;
+const RULES_VERSION = 4;
 const EPOCH_DATE = '2026-01-01';
 
 const ALL_MUTATIONS = [
@@ -67,7 +67,17 @@ const ALL_MUTATIONS = [
   'MAGNETIC_CELLS',
   'TURNTABLES',
   'TETHER_PYLON',
-  'BLAST_DOORS'
+  'BLAST_DOORS',
+  'REFLECTORS',
+  'ECHO',
+  'ONE_WAY_GATES',
+  'ORBITAL_CELLS',
+  'PULSE_BEAM',
+  'VENTILATION',
+  'INERTIA',
+  'FLOOD',
+  'PHASE_LAYERS',
+  'ROTORS'
 ];
 
 // Mutations that modify other systems require at least one host mutation;
@@ -184,7 +194,17 @@ const MUTATION_STEP_INFO = {
   DECAY: { step: 7, role: '2-turn collapsing floor pits' },
   INFECTION: { step: 7, role: '2-turn spreading biomass' },
   TURNTABLES: { step: 7, role: '3-turn 90° hub rotation' },
-  PAYLOAD_MASS: { step: 5, role: 'cell-count weight scaling' }
+  PAYLOAD_MASS: { step: 5, role: 'cell-count weight scaling' },
+  REFLECTORS: { step: 3, role: '90° prism redirection' },
+  ECHO: { step: 2, role: 'one-turn delayed replay' },
+  ONE_WAY_GATES: { step: 1, role: 'direction-limited entry' },
+  ORBITAL_CELLS: { step: 7, role: 'clockwise cell orbit' },
+  PULSE_BEAM: { step: 1, role: 'alternating scanning hazard' },
+  VENTILATION: { step: 3, role: 'alternating airflow push' },
+  INERTIA: { step: 1, role: 'repeat-direction momentum' },
+  FLOOD: { step: 7, role: 'three-turn water advance' },
+  PHASE_LAYERS: { step: 1, role: 'two-turn layer swap' },
+  ROTORS: { step: 1, role: 'queued 90° input rotation' }
 };
 
 function computeActiveJinxes(mutations) {
@@ -377,6 +397,86 @@ const MUTATION_META = {
     shortDesc: 'Stepping on Pressure Plates toggles armored Blast Doors open/closed.',
     fullDesc:
       'Armored Blast Doors start sealed shut. Whenever the Courier or Mirror Drone enters a lime Pressure Plate, all Blast Doors toggle between open and closed.'
+  },
+  REFLECTORS: {
+    name: 'REFLECTORS',
+    color: '#f0abfc',
+    rgb: '240, 171, 252',
+    icon: '↗',
+    shortDesc: 'Prism tiles bend forced movement 90° and send you one tile onward.',
+    fullDesc: 'Entering a prism turns your current travel direction 90° clockwise or counterclockwise, then moves you one tile along the new direction. Each prism can redirect you at most once per turn.'
+  },
+  ECHO: {
+    name: 'ECHO',
+    color: '#c4b5fd',
+    rgb: '196, 181, 253',
+    icon: '◌',
+    shortDesc: 'A delayed echo repeats your previous move one turn later.',
+    fullDesc: 'A ghost starts elsewhere in the chamber. Beginning with your second move, it repeats the previous turn’s direction one turn late. It blocks movement and can activate Pressure Plates, but cannot collect cells.'
+  },
+  ONE_WAY_GATES: {
+    name: 'ONE-WAY GATES',
+    color: '#67e8f9',
+    rgb: '103, 232, 249',
+    icon: '⇢',
+    shortDesc: 'Arrow gates only allow entry in the direction they point.',
+    fullDesc: 'A gate can be entered only while moving in the direction of its arrow. Once through, you may move away normally. The rule applies to voluntary and forced movement.'
+  },
+  ORBITAL_CELLS: {
+    name: 'ORBITAL CELLS',
+    color: '#fcd34d',
+    rgb: '252, 211, 77',
+    icon: '⟳',
+    shortDesc: 'Uncollected Energy Cells orbit a small loop after each turn.',
+    fullDesc: 'Each uncollected Energy Cell advances one position clockwise around its four-tile orbit after every completed turn. Their current positions are shown on the board.'
+  },
+  PULSE_BEAM: {
+    name: 'PULSE BEAM',
+    color: '#fb7185',
+    rgb: '251, 113, 133',
+    icon: '━',
+    shortDesc: 'A scanning beam sweeps one row or column, live every other turn.',
+    fullDesc: 'A beam sweeps one row or column inward, advancing after each two-turn pulse. It is visibly marked before you move and blocks entry only while energized.'
+  },
+  VENTILATION: {
+    name: 'VENTILATION',
+    color: '#5eead4',
+    rgb: '94, 234, 212',
+    icon: '≋',
+    shortDesc: 'Vent tiles push you one square in the direction of their airflow.',
+    fullDesc: 'Entering a vent while its airflow is active pushes the Courier one tile in the arrow direction. Vents activate on alternating turns and can chain with other tile effects.'
+  },
+  INERTIA: {
+    name: 'INERTIA',
+    color: '#fbbf24',
+    rgb: '251, 191, 36',
+    icon: '»',
+    shortDesc: 'Repeating your previous direction carries you one extra tile.',
+    fullDesc: 'If you choose the same direction as your previous move, the Courier travels up to two tiles. Changing direction resets momentum. This never stacks with Overclock to exceed two voluntary steps.'
+  },
+  FLOOD: {
+    name: 'FLOOD',
+    color: '#38bdf8',
+    rgb: '56, 189, 248',
+    icon: '≈',
+    shortDesc: 'Water claims up to two rows or columns from a marked edge.',
+    fullDesc: 'Every three completed turns, water advances one tile farther from its marked edge, up to two tiles deep. Flooded tiles are impassable. The source edge is selected away from the Start and Exit.'
+  },
+  PHASE_LAYERS: {
+    name: 'PHASE LAYERS',
+    color: '#a78bfa',
+    rgb: '167, 139, 250',
+    icon: '◫',
+    shortDesc: 'Marked tiles alternate between solid and open every two turns.',
+    fullDesc: 'Each marked phase tile belongs to one of two layers. A layer is solid for two turns, then the other layer becomes solid. The active layer is shown directly on the grid.'
+  },
+  ROTORS: {
+    name: 'ROTORS',
+    color: '#fda4af',
+    rgb: '253, 164, 175',
+    icon: '⤾',
+    shortDesc: 'Landing on a rotor turns your next input 90°.',
+    fullDesc: 'A clockwise or counterclockwise rotor changes the direction of your next voluntary input by 90°. The queued turn is shown in telemetry and is consumed by the next move.'
   }
 };
 
@@ -408,8 +508,8 @@ const ACHIEVEMENTS = [
   {
     id: 'mutation_master',
     title: 'Mutation Master',
-    description: 'Complete all 136 two-mutation combinations.',
-    badge: '136'
+    description: 'Complete all 351 two-mutation combinations.',
+    badge: '351'
   },
   {
     id: 'unbroken',
@@ -464,6 +564,51 @@ function inBounds(r, c) {
 function stepCoord(pos, dir) {
   const d = DIR_DELTAS[dir];
   return { r: pos.r + d.r, c: pos.c + d.c };
+}
+
+function rotateDir(dir, quarterTurns = 1) {
+  const clockwise = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+  const current = clockwise.indexOf(dir);
+  if (current < 0) return dir;
+  return clockwise[(current + quarterTurns + 8) % 4];
+}
+
+function getCellPosition(puzzle, index, completedTurns = 0) {
+  const path = puzzle.cellOrbitPaths && puzzle.cellOrbitPaths[index];
+  if (!path || path.length < 2) return puzzle.cells[index];
+  return path[completedTurns % path.length];
+}
+
+function getPulseBeamLine(puzzle, completedTurns) {
+  const beam = puzzle.pulseBeam;
+  if (!beam) return null;
+  const step = Math.floor(completedTurns / 2);
+  const index = ((beam.startIndex + beam.direction * step) % GRID_SIZE + GRID_SIZE) % GRID_SIZE;
+  return { axis: beam.axis, index, active: completedTurns % 2 === 0 };
+}
+
+function isPulseBeamBlocked(puzzle, completedTurns, pos) {
+  const line = getPulseBeamLine(puzzle, completedTurns);
+  if (!line || !line.active) return false;
+  return line.axis === 'row' ? pos.r === line.index : pos.c === line.index;
+}
+
+function getFloodDepth(puzzle, completedTurns) {
+  return puzzle.flood ? Math.min(2, Math.floor(completedTurns / 3)) : 0;
+}
+
+function isFlooded(puzzle, completedTurns, pos) {
+  const depth = getFloodDepth(puzzle, completedTurns);
+  if (!depth || !puzzle.flood) return false;
+  const edge = puzzle.flood.edge;
+  if (edge === 'TOP') return pos.r < depth;
+  if (edge === 'BOTTOM') return pos.r >= GRID_SIZE - depth;
+  if (edge === 'LEFT') return pos.c < depth;
+  return pos.c >= GRID_SIZE - depth;
+}
+
+function getActivePhaseLayer(completedTurns) {
+  return Math.floor(completedTurns / 2) % 2;
 }
 
 function chebyshevDist(a, b) {
@@ -832,7 +977,11 @@ function isImmuneToDecay(puzzle, boardView, pos) {
   if (boardView.grid[pos.r][pos.c] === 'WALL') return true;
   if (sameCoord(pos, puzzle.start)) return true;
   if (sameCoord(pos, puzzle.exit)) return true;
-  if (sameCoord(pos, puzzle.cells[0]) || sameCoord(pos, puzzle.cells[1])) return true;
+  if (
+    (puzzle.cellOrbitPaths || []).some((path) => path.some((cell) => sameCoord(cell, pos))) ||
+    sameCoord(pos, puzzle.cells[0]) ||
+    sameCoord(pos, puzzle.cells[1])
+  ) return true;
   if (boardView.conveyors.some((cv) => sameCoord(cv, pos))) return true;
   if (puzzle.portals.some((pt) => sameCoord(pt, pos))) return true;
   if (boardView.phaseGates.some((pg) => sameCoord(pg, pos))) return true;
@@ -882,7 +1031,11 @@ function isImmuneToInfection(puzzle, boardView, pos) {
   if (boardView.grid[pos.r][pos.c] === 'WALL') return true;
   if (sameCoord(pos, puzzle.start)) return true;
   if (sameCoord(pos, puzzle.exit)) return true;
-  if (sameCoord(pos, puzzle.cells[0]) || sameCoord(pos, puzzle.cells[1])) return true;
+  if (
+    (puzzle.cellOrbitPaths || []).some((path) => path.some((cell) => sameCoord(cell, pos))) ||
+    sameCoord(pos, puzzle.cells[0]) ||
+    sameCoord(pos, puzzle.cells[1])
+  ) return true;
   if (boardView.conveyors.some((cv) => sameCoord(cv, pos))) return true;
   if (puzzle.portals.some((pt) => sameCoord(pt, pos))) return true;
   if (boardView.phaseGates.some((pg) => sameCoord(pg, pos))) return true;
@@ -961,6 +1114,10 @@ function createInitialGameState(puzzle) {
     turn: 0,
     courier: { ...puzzle.start },
     drone: hasDrone && puzzle.droneStart ? { ...puzzle.droneStart } : null,
+    echoPos: puzzle.mutations.includes('ECHO') && puzzle.echoStart ? { ...puzzle.echoStart } : null,
+    lastInputDir: null,
+    inertiaDir: null,
+    pendingRotation: 0,
     prevTurn1Pos: null,
     afterimagePos: null,
     blastDoorsOpen: false,
@@ -985,7 +1142,21 @@ function isTileBlocked(
   if (!inBounds(pos.r, pos.c)) return true;
   if (boardView.grid[pos.r][pos.c] === 'WALL') return true;
   if (dronePos && sameCoord(pos, dronePos)) return true;
+  if (stateRef.echoPos && sameCoord(pos, stateRef.echoPos)) return true;
   if (stateRef.afterimagePos && sameCoord(pos, stateRef.afterimagePos)) return true;
+
+  if (puzzle.mutations.includes('ONE_WAY_GATES')) {
+    const gate = (puzzle.oneWayGates || []).find((g) => sameCoord(g, pos));
+    if (gate && stateRef.movementDir && stateRef.movementDir !== gate.dir) return true;
+  }
+  if (isPulseBeamBlocked(puzzle, turn, pos)) return true;
+  if (isFlooded(puzzle, turn, pos)) return true;
+  if (
+    puzzle.mutations.includes('PHASE_LAYERS') &&
+    (puzzle.phaseTiles || []).some(
+      (tile) => sameCoord(tile, pos) && tile.layer === getActivePhaseLayer(turn)
+    )
+  ) return true;
   if (
     puzzle.mutations.includes('PHASE_GATES') &&
     boardView.phaseGates.some(
@@ -1007,12 +1178,14 @@ function isTileBlocked(
   return false;
 }
 
-function collectCellsAt(puzzle, pos, collected, events) {
-  if (!collected[0] && sameCoord(pos, puzzle.cells[0])) {
+function collectCellsAt(puzzle, pos, collected, events, turn = 0) {
+  const cell0 = getCellPosition(puzzle, 0, turn);
+  const cell1 = getCellPosition(puzzle, 1, turn);
+  if (!collected[0] && sameCoord(pos, cell0)) {
     collected[0] = true;
     events.push({ type: 'COLLECT_CELL', index: 0, at: { ...pos } });
   }
-  if (!collected[1] && sameCoord(pos, puzzle.cells[1])) {
+  if (!collected[1] && sameCoord(pos, cell1)) {
     collected[1] = true;
     events.push({ type: 'COLLECT_CELL', index: 1, at: { ...pos } });
   }
@@ -1087,7 +1260,7 @@ function resolveTileEntryEffects(
             to: dest.label,
             coord: { ...pos }
           });
-          collectCellsAt(puzzle, pos, collected, events);
+          collectCellsAt(puzzle, pos, collected, events, turn);
           checkPressurePlateTrigger(
             puzzle,
             boardView,
@@ -1123,7 +1296,7 @@ function resolveTileEntryEffects(
           });
           pos = nextPos;
           travelDir = conv.dir;
-          collectCellsAt(puzzle, pos, collected, events);
+          collectCellsAt(puzzle, pos, collected, events, turn);
           checkPressurePlateTrigger(
             puzzle,
             boardView,
@@ -1159,7 +1332,7 @@ function resolveTileEntryEffects(
             to: { ...slidePos }
           });
           pos = slidePos;
-          collectCellsAt(puzzle, pos, collected, events);
+          collectCellsAt(puzzle, pos, collected, events, turn);
           checkPressurePlateTrigger(
             puzzle,
             boardView,
@@ -1196,7 +1369,7 @@ function applyMagneticCellForces(
 
   // Cell #1 (+): Repels Courier 1 tile away if orthogonally adjacent and uncollected
   if (!collected[0]) {
-    const c0 = puzzle.cells[0];
+    const c0 = getCellPosition(puzzle, 0, turn);
     const dr = current.r - c0.r;
     const dc = current.c - c0.c;
     if (Math.abs(dr) + Math.abs(dc) === 1) {
@@ -1213,7 +1386,7 @@ function applyMagneticCellForces(
         });
         current = target;
         movedDir = repelDir;
-        collectCellsAt(puzzle, current, collected, events);
+        collectCellsAt(puzzle, current, collected, events, turn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1229,7 +1402,7 @@ function applyMagneticCellForces(
 
   // Cell #2 (-): Attracts Courier 1 tile toward itself within 2 unobstructed straight tiles
   if (!collected[1]) {
-    const c1 = puzzle.cells[1];
+    const c1 = getCellPosition(puzzle, 1, turn);
     if (current.r === c1.r && current.c !== c1.c && Math.abs(current.c - c1.c) <= 2) {
       const pullDir = c1.c > current.c ? 'RIGHT' : 'LEFT';
       const target = stepCoord(current, pullDir);
@@ -1243,7 +1416,7 @@ function applyMagneticCellForces(
         });
         current = target;
         movedDir = pullDir;
-        collectCellsAt(puzzle, current, collected, events);
+        collectCellsAt(puzzle, current, collected, events, turn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1271,7 +1444,7 @@ function applyMagneticCellForces(
         });
         current = target;
         movedDir = pullDir;
-        collectCellsAt(puzzle, current, collected, events);
+        collectCellsAt(puzzle, current, collected, events, turn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1329,7 +1502,7 @@ function applyMagnetismPull(
           to: { ...nextPos }
         });
         current = nextPos;
-        collectCellsAt(puzzle, current, collected, events);
+        collectCellsAt(puzzle, current, collected, events, turn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1367,7 +1540,7 @@ function applyMagnetismPull(
           to: { ...nextPos }
         });
         current = nextPos;
-        collectCellsAt(puzzle, current, collected, events);
+        collectCellsAt(puzzle, current, collected, events, turn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1463,7 +1636,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
         });
         pos = beyondWall;
         movedAtLeastOnce = true;
-        collectCellsAt(puzzle, pos, collected, events);
+        collectCellsAt(puzzle, pos, collected, events, currentTurn);
         checkPressurePlateTrigger(
           puzzle,
           boardView,
@@ -1491,7 +1664,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
     });
     pos = nextCand;
     movedAtLeastOnce = true;
-    collectCellsAt(puzzle, pos, collected, events);
+    collectCellsAt(puzzle, pos, collected, events, currentTurn);
     checkPressurePlateTrigger(
       puzzle,
       boardView,
@@ -1633,7 +1806,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
         to: { ...gravTarget }
       });
       pos = gravTarget;
-      collectCellsAt(puzzle, pos, collected, events);
+      collectCellsAt(puzzle, pos, collected, events, currentTurn);
       checkPressurePlateTrigger(
         puzzle,
         boardView,
@@ -1684,7 +1857,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
         to: { ...snapTarget }
       });
       pos = snapTarget;
-      collectCellsAt(puzzle, pos, collected, events);
+      collectCellsAt(puzzle, pos, collected, events, currentTurn);
       checkPressurePlateTrigger(
         puzzle,
         boardView,
@@ -1697,7 +1870,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
     }
   }
 
-  collectCellsAt(puzzle, pos, collected, events);
+  collectCellsAt(puzzle, pos, collected, events, currentTurn);
 
   // Step 7: Advance turn counter & apply Afterimage, Decay, Infection & Turntables
   const nextTurn = currentTurn + 1;
@@ -1766,7 +1939,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
       const rotatedCourier = rotateAroundHub(hub, pos);
       if (!sameCoord(rotatedCourier, pos)) {
         pos = rotatedCourier;
-        collectCellsAt(puzzle, pos, collected, events);
+        collectCellsAt(puzzle, pos, collected, events, currentTurn);
       }
       if (dronePos) {
         dronePos = rotateAroundHub(hub, dronePos);
@@ -1842,6 +2015,7 @@ function encodeStateKey(state) {
     (state.blastDoorsOpen ? 4 : 0);
   const turnCycle = state.turn % 12;
   const droneStr = state.drone ? `${state.drone.r},${state.drone.c}` : '-';
+  const echoStr = state.echoPos ? `${state.echoPos.r},${state.echoPos.c}` : '-';
   const afterStr = state.afterimagePos
     ? `${state.afterimagePos.r},${state.afterimagePos.c}`
     : '-';
@@ -1854,7 +2028,7 @@ function encodeStateKey(state) {
     .map(([k, v]) => `${k}:${v}`)
     .join(';');
   const infectedStr = state.infectedTiles.join(';');
-  return `${state.courier.r},${state.courier.c}|${droneStr}|${prev1Str}|${afterStr}|${mask}|${turnCycle}|${decayEntries}|${infectedStr}`;
+  return `${state.courier.r},${state.courier.c}|${droneStr}|${echoStr}|${state.lastInputDir || '-'}|${state.inertiaDir || '-'}|${state.pendingRotation || 0}|${prev1Str}|${afterStr}|${mask}|${turnCycle}|${decayEntries}|${infectedStr}`;
 }
 
 function solvePuzzleBFS(puzzle, maxDepth = 28, maxStates = 45000) {
@@ -1976,7 +2150,13 @@ function verifyAllMutationsRelevant(candidate, solveResult) {
     AFTERIMAGE: ['AFTERIMAGE_SPAWN'],
     DECAY: ['DECAY_COLLAPSE'],
     INFECTION: ['INFECTION_SPREAD'],
-    MIRROR_DRONE: ['DRONE_MOVE']
+    MIRROR_DRONE: ['DRONE_MOVE'],
+    REFLECTORS: ['REFLECTOR'],
+    ECHO: ['ECHO_MOVE'],
+    ORBITAL_CELLS: ['CELL_ORBIT'],
+    VENTILATION: ['VENT_PUSH'],
+    INERTIA: ['INERTIA_STEP'],
+    ROTORS: ['ROTOR_TRIGGER']
   };
 
   for (const mut of candidate.mutations) {
@@ -2541,6 +2721,109 @@ function buildCandidateBoard(
     }
   }
 
+  // New mutation modules use small footprints and keep objectives unobstructed.
+  const reflectors = [];
+  if (mutations.includes('REFLECTORS')) {
+    for (let i = 0; i < 2; i++) {
+      const coord = claimCoord();
+      if (coord) reflectors.push({ ...coord, rotation: rng.nextInt(0, 2) === 0 ? -1 : 1 });
+    }
+  }
+
+  const oneWayGates = [];
+  if (mutations.includes('ONE_WAY_GATES')) {
+    for (let i = 0; i < 2; i++) {
+      const coord = claimCoord();
+      if (coord) oneWayGates.push({ ...coord, dir: ALL_DIRS[rng.nextInt(0, ALL_DIRS.length)] });
+    }
+  }
+
+  const ventTiles = [];
+  if (mutations.includes('VENTILATION')) {
+    for (let i = 0; i < 2; i++) {
+      const coord = claimCoord();
+      if (coord) ventTiles.push({ ...coord, dir: ALL_DIRS[rng.nextInt(0, ALL_DIRS.length)] });
+    }
+  }
+
+  const rotors = [];
+  if (mutations.includes('ROTORS')) {
+    for (let i = 0; i < 2; i++) {
+      const coord = claimCoord();
+      if (coord) rotors.push({ ...coord, rotation: rng.nextInt(0, 2) === 0 ? -1 : 1 });
+    }
+  }
+
+  const phaseTiles = [];
+  if (mutations.includes('PHASE_LAYERS')) {
+    for (let i = 0; i < 4; i++) {
+      const coord = claimCoord();
+      if (coord) phaseTiles.push({ ...coord, layer: i % 2 });
+    }
+  }
+
+  const cellOrbitPaths = [];
+  if (mutations.includes('ORBITAL_CELLS')) {
+    for (const origin of [cell1, cell2]) {
+      let selectedPath = null;
+      for (const rowOffset of [-1, 0]) {
+        for (const colOffset of [-1, 0]) {
+          const top = origin.r + rowOffset;
+          const left = origin.c + colOffset;
+          const ring = [
+            { r: top, c: left },
+            { r: top, c: left + 1 },
+            { r: top + 1, c: left + 1 },
+            { r: top + 1, c: left }
+          ];
+          const originIndex = ring.findIndex((p) => sameCoord(p, origin));
+          if (originIndex < 0 || ring.some((p) => !inBounds(p.r, p.c))) continue;
+          const extras = ring.filter((p) => !sameCoord(p, origin));
+          if (extras.some((p) => occupied.has(coordKey(p)))) continue;
+          selectedPath = ring.slice(originIndex).concat(ring.slice(0, originIndex));
+          extras.forEach((p) => occupied.add(coordKey(p)));
+          break;
+        }
+        if (selectedPath) break;
+      }
+      if (!selectedPath) return null;
+      cellOrbitPaths.push(selectedPath);
+    }
+  }
+
+  let echoStart = null;
+  if (mutations.includes('ECHO')) {
+    const mirror = { r: GRID_SIZE - 1 - start.r, c: GRID_SIZE - 1 - start.c };
+    if (!occupied.has(coordKey(mirror))) {
+      echoStart = mirror;
+      occupied.add(coordKey(mirror));
+    } else {
+      echoStart = claimCoord((c) => !sameCoord(c, exit));
+    }
+    if (!echoStart) return null;
+  }
+
+  let pulseBeam = null;
+  if (mutations.includes('PULSE_BEAM')) {
+    const axis = rng.nextInt(0, 2) === 0 ? 'row' : 'col';
+    const startCoord = axis === 'row' ? start.r : start.c;
+    const exitCoord = axis === 'row' ? exit.r : exit.c;
+    const choices = [0, GRID_SIZE - 1].filter((n) => n !== startCoord && n !== exitCoord);
+    const startIndex = choices.length ? choices[rng.nextInt(0, choices.length)] : (startCoord < 3 ? GRID_SIZE - 1 : 0);
+    pulseBeam = { axis, startIndex, direction: startIndex === 0 ? 1 : -1 };
+  }
+
+  let flood = null;
+  if (mutations.includes('FLOOD')) {
+    const choices = [
+      { edge: 'TOP', safe: Math.min(start.r, exit.r) >= 2 },
+      { edge: 'BOTTOM', safe: Math.min(GRID_SIZE - 1 - start.r, GRID_SIZE - 1 - exit.r) >= 2 },
+      { edge: 'LEFT', safe: Math.min(start.c, exit.c) >= 2 },
+      { edge: 'RIGHT', safe: Math.min(GRID_SIZE - 1 - start.c, GRID_SIZE - 1 - exit.c) >= 2 }
+    ].filter((choice) => choice.safe);
+    flood = choices.length ? { edge: choices[rng.nextInt(0, choices.length)].edge } : null;
+  }
+
   // Internal walls (also ensure at least 1 wall sits in each Turntable ring so rotation alters terrain)
   for (const hub of turntables) {
     const ring = [
@@ -2592,8 +2875,11 @@ function buildCandidateBoard(
       'AFTERIMAGE'
     ].includes(m)
   ).length;
-  const minWalls = blockingMutCount >= 2 ? 3 : 5;
-  const maxWalls = blockingMutCount >= 2 ? 6 : 9;
+  const newTerrainCount = mutations.filter((m) =>
+    ['ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
+  ).length;
+  const minWalls = blockingMutCount + newTerrainCount >= 2 ? 2 : 4;
+  const maxWalls = blockingMutCount + newTerrainCount >= 2 ? 4 : 7;
   const wallCount = rng.nextInt(minWalls, maxWalls + 1);
   for (let i = 0; i < wallCount; i++) {
     const wCoord = claimCoord();
@@ -2623,6 +2909,15 @@ function buildCandidateBoard(
     turntables,
     tetherPylon,
     initialInfected,
+    reflectors,
+    echoStart,
+    oneWayGates,
+    cellOrbitPaths,
+    pulseBeam,
+    ventTiles,
+    flood,
+    phaseTiles,
+    rotors,
     infectionPriority,
     optimalMoves: 0,
     optimalPath: [],
@@ -2745,6 +3040,15 @@ function buildVerifiedFallbackPuzzle(
       turntables: mutations.includes('TURNTABLES') ? [{ r: 3, c: 2 }] : [],
       tetherPylon: mutations.includes('TETHER_PYLON') ? { r: 3, c: 3 } : null,
       initialInfected: mutations.includes('INFECTION') ? [{ r: 0, c: 2 }] : [],
+      reflectors: mutations.includes('REFLECTORS') ? [{ r: 2, c: 2, rotation: 1 }] : [],
+      echoStart: mutations.includes('ECHO') ? { r: 5, c: 5 } : null,
+      oneWayGates: mutations.includes('ONE_WAY_GATES') ? [{ r: 2, c: 3, dir: 'RIGHT' }] : [],
+      cellOrbitPaths: [],
+      pulseBeam: mutations.includes('PULSE_BEAM') ? { axis: 'row', startIndex: 0, direction: 1 } : null,
+      ventTiles: mutations.includes('VENTILATION') ? [{ r: 2, c: 2, dir: 'DOWN' }] : [],
+      flood: mutations.includes('FLOOD') ? { edge: 'TOP' } : null,
+      phaseTiles: mutations.includes('PHASE_LAYERS') ? [{ r: 2, c: 3, layer: 0 }] : [],
+      rotors: mutations.includes('ROTORS') ? [{ r: 4, c: 2, rotation: 1 }] : [],
       infectionPriority: ['DOWN', 'RIGHT', 'LEFT', 'UP'],
       optimalMoves: 12,
       optimalPath: [],
@@ -2879,7 +3183,7 @@ function generateDailyPuzzle(dateKey, forcedMutations = null) {
     candidate.optimalMoves = solveResult.optimalMoves;
     candidate.optimalPath = solveResult.solutionPath || [];
 
-    if (solveResult.optimalMoves >= 8 && solveResult.optimalMoves <= 26) {
+    if (solveResult.optimalMoves >= 7 && solveResult.optimalMoves <= 22) {
       if (verifyAllMutationsRelevant(candidate, solveResult)) {
         candidate.verifiedRelevant = true;
         return candidate;
