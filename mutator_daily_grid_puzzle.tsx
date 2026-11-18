@@ -1,4 +1,5 @@
 import ReactNamespace from 'react';
+import mutatorMark from './src/assets/mutator-mark.svg';
 
 const React =
   typeof window !== 'undefined' && window.React ? window.React : ReactNamespace;
@@ -5075,7 +5076,7 @@ export default function App() {
       <div className="app-shell">
         <header className="lab-header">
           <div className="brand-group">
-            <div className="brand-badge">M</div>
+            <div className="brand-badge"><img src={mutatorMark} alt="" /></div>
             <span className="brand-title">MUTATOR</span>
             <span className="challenge-tag">
               #{formatChallengeNumber(puzzle.challengeNumber)}
