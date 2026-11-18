@@ -574,12 +574,14 @@ function rotateDir(dir, quarterTurns = 1) {
 }
 
 function getCellPosition(puzzle, index, completedTurns = 0) {
+  if (!puzzle.mutations.includes('ORBITAL_CELLS')) return puzzle.cells[index];
   const path = puzzle.cellOrbitPaths && puzzle.cellOrbitPaths[index];
   if (!path || path.length < 2) return puzzle.cells[index];
   return path[completedTurns % path.length];
 }
 
 function getPulseBeamLine(puzzle, completedTurns) {
+  if (!puzzle.mutations.includes('PULSE_BEAM')) return null;
   const beam = puzzle.pulseBeam;
   if (!beam) return null;
   const step = Math.floor(completedTurns / 2);
@@ -594,7 +596,9 @@ function isPulseBeamBlocked(puzzle, completedTurns, pos) {
 }
 
 function getFloodDepth(puzzle, completedTurns) {
-  return puzzle.flood ? Math.min(2, Math.floor(completedTurns / 3)) : 0;
+  return puzzle.mutations.includes('FLOOD') && puzzle.flood
+    ? Math.min(2, Math.floor(completedTurns / 3))
+    : 0;
 }
 
 function isFlooded(puzzle, completedTurns, pos) {
@@ -991,6 +995,11 @@ function isImmuneToDecay(puzzle, boardView, pos) {
   if (puzzle.tetherPylon && sameCoord(puzzle.tetherPylon, pos)) return true;
   if (boardView.blastDoors.some((bd) => sameCoord(bd, pos))) return true;
   if (boardView.pressurePlates.some((pp) => sameCoord(pp, pos))) return true;
+  if ((puzzle.reflectors || []).some((tile) => sameCoord(tile, pos))) return true;
+  if ((puzzle.oneWayGates || []).some((tile) => sameCoord(tile, pos))) return true;
+  if ((puzzle.ventTiles || []).some((tile) => sameCoord(tile, pos))) return true;
+  if ((puzzle.rotors || []).some((tile) => sameCoord(tile, pos))) return true;
+  if ((puzzle.phaseTiles || []).some((tile) => sameCoord(tile, pos))) return true;
   const key = coordKey(pos);
   if (puzzle.initialInfected.some((inf) => coordKey(inf) === key)) return true;
   return false;
@@ -1005,15 +1014,16 @@ function markTileLeftForDecay(puzzle, boardView, decayTimers, leftPos, isHeavy) 
   }
 }
 
-function tickDecayTimers(decayTimers, courierPos, dronePos) {
+function tickDecayTimers(decayTimers, courierPos, dronePos, echoPos = null) {
   const newlyCollapsed = [];
   const courierKey = coordKey(courierPos);
   const droneKey = dronePos ? coordKey(dronePos) : null;
+  const echoKey = echoPos ? coordKey(echoPos) : null;
 
   for (const [key, remaining] of Object.entries(decayTimers)) {
     if (remaining <= 0) continue;
     const nextVal = remaining - 1;
-    if (nextVal === 0 && (key === courierKey || key === droneKey)) {
+    if (nextVal === 0 && (key === courierKey || key === droneKey || key === echoKey)) {
       decayTimers[key] = 1;
       continue;
     }
@@ -1367,7 +1377,7 @@ function resolveTileEntryEffects(
     }
 
     // ROTORS queue a 90-degree change for the next voluntary input.
-    if (!moved) {
+    if (!moved && puzzle.mutations.includes('ROTORS')) {
       const rotor = (puzzle.rotors || []).find((r) => sameCoord(r, pos));
       const rotorKey = rotor ? coordKey(rotor) : null;
       if (rotor && !visitedRotors.has(rotorKey)) {
@@ -1541,6 +1551,7 @@ function applyMagnetismPull(
   for (const mag of puzzle.magnets) {
     if (current.r === mag.r && current.c !== mag.c) {
       const stepC = mag.c > current.c ? 1 : -1;
+      stateRef.movementDir = stepC > 0 ? 'RIGHT' : 'LEFT';
       let clear = true;
       for (let c = current.c + stepC; c !== mag.c; c += stepC) {
         if (
@@ -1581,6 +1592,7 @@ function applyMagnetismPull(
       }
     } else if (current.c === mag.c && current.r !== mag.r) {
       const stepR = mag.r > current.r ? 1 : -1;
+      stateRef.movementDir = stepR > 0 ? 'DOWN' : 'UP';
       let clear = true;
       for (let r = current.r + stepR; r !== mag.r; r += stepR) {
         if (
@@ -1736,12 +1748,14 @@ function simulateTurn(puzzle, prevState, inputDir) {
       leftTiles.push({ ...pos });
     }
     events.push({
-      type: overclockNow ? 'OVERCLOCK_STEP' : 'MOVE',
+      type: overclockNow ? 'OVERCLOCK_STEP' : inertiaNow && s > 0 ? 'INERTIA_STEP' : 'MOVE',
       from: { ...pos },
       to: { ...nextCand }
     });
     pos = nextCand;
     movedAtLeastOnce = true;
+    const enteredGate = (puzzle.oneWayGates || []).find((gate) => sameCoord(gate, pos));
+    if (enteredGate) events.push({ type: 'ONE_WAY_GATE', dir: enteredGate.dir, at: { ...pos } });
     collectCellsAt(puzzle, pos, collected, events, currentTurn);
     checkPressurePlateTrigger(
       puzzle,
@@ -1895,6 +1909,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
     const gravSteps = massTier === 'LIGHT' ? 2 : 1;
     for (let gs = 0; gs < gravSteps; gs++) {
       const gravTarget = stepCoord(pos, prevState.gravityDir);
+      liveState.movementDir = prevState.gravityDir;
       if (isTileBlocked(puzzle, boardView, liveState, gravTarget, currentTurn, dronePos)) {
         break;
       }
@@ -1948,6 +1963,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
           ? 'RIGHT'
           : 'LEFT';
     const snapTarget = stepCoord(pos, snapDir);
+    liveState.movementDir = snapDir;
     if (!isTileBlocked(puzzle, boardView, liveState, snapTarget, currentTurn, dronePos)) {
       leftTiles.push({ ...pos });
       events.push({
@@ -2007,7 +2023,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
         markTileLeftForDecay(puzzle, boardView, decayTimers, leftPos, isHeavy);
       }
     }
-    const collapsed = tickDecayTimers(decayTimers, pos, dronePos);
+    const collapsed = tickDecayTimers(decayTimers, pos, dronePos, echoPos);
     for (const c of collapsed) {
       events.push({ type: 'DECAY_COLLAPSE', at: c });
     }
@@ -2139,7 +2155,7 @@ function encodeStateKey(state) {
     (state.collectedCells[0] ? 1 : 0) |
     (state.collectedCells[1] ? 2 : 0) |
     (state.blastDoorsOpen ? 4 : 0);
-  const turnCycle = state.turn % 12;
+  const turnCycle = state.turn % 84;
   const droneStr = state.drone ? `${state.drone.r},${state.drone.c}` : '-';
   const echoStr = state.echoPos ? `${state.echoPos.r},${state.echoPos.c}` : '-';
   const afterStr = state.afterimagePos
@@ -2281,7 +2297,6 @@ function verifyAllMutationsRelevant(candidate, solveResult) {
     ECHO: ['ECHO_MOVE'],
     ORBITAL_CELLS: ['CELL_ORBIT'],
     VENTILATION: ['VENT_PUSH'],
-    INERTIA: ['INERTIA_STEP'],
     ROTORS: ['ROTOR_TRIGGER']
   };
 
@@ -2301,7 +2316,16 @@ function verifyAllMutationsRelevant(candidate, solveResult) {
       turntables: mut === 'TURNTABLES' ? [] : candidate.turntables,
       tetherPylon: mut === 'TETHER_PYLON' ? null : candidate.tetherPylon,
       droneStart: mut === 'MIRROR_DRONE' ? null : candidate.droneStart,
-      initialInfected: mut === 'INFECTION' ? [] : candidate.initialInfected
+      initialInfected: mut === 'INFECTION' ? [] : candidate.initialInfected,
+      reflectors: mut === 'REFLECTORS' ? [] : candidate.reflectors,
+      echoStart: mut === 'ECHO' ? null : candidate.echoStart,
+      oneWayGates: mut === 'ONE_WAY_GATES' ? [] : candidate.oneWayGates,
+      cellOrbitPaths: mut === 'ORBITAL_CELLS' ? [] : candidate.cellOrbitPaths,
+      pulseBeam: mut === 'PULSE_BEAM' ? null : candidate.pulseBeam,
+      ventTiles: mut === 'VENTILATION' ? [] : candidate.ventTiles,
+      flood: mut === 'FLOOD' ? null : candidate.flood,
+      phaseTiles: mut === 'PHASE_LAYERS' ? [] : candidate.phaseTiles,
+      rotors: mut === 'ROTORS' ? [] : candidate.rotors
     };
 
     const ablatedSolve = solvePuzzleBFS(ablatedPuzzle, 28, 22000);
