@@ -4162,6 +4162,11 @@ export default function App() {
           align-items: center;
           gap: 8px;
         }
+        .brand-badge img {
+          display: block;
+          width: 22px;
+          height: 22px;
+        }
         .brand-badge {
           width: 28px;
           height: 28px;
