@@ -994,14 +994,18 @@ function getRotatedBoardSnapshot(puzzle, turn) {
       blastDoors = blastDoors.map((bd) => rotateSlotOnce(hub, bd));
       pressurePlates = pressurePlates.map((pp) => rotateSlotOnce(hub, pp));
       reflectors = reflectors.map((item) => rotateSlotOnce(hub, item));
-      oneWayGates = oneWayGates.map((item) => ({
-        ...rotateSlotOnce(hub, item),
-        dir: CW_DIR[item.dir]
-      }));
-      ventTiles = ventTiles.map((item) => ({
-        ...rotateSlotOnce(hub, item),
-        dir: CW_DIR[item.dir]
-      }));
+      oneWayGates = oneWayGates.map((item) => {
+        const nextPos = rotateSlotOnce(hub, item);
+        return sameCoord(nextPos, item)
+          ? item
+          : { ...nextPos, dir: CW_DIR[item.dir] };
+      });
+      ventTiles = ventTiles.map((item) => {
+        const nextPos = rotateSlotOnce(hub, item);
+        return sameCoord(nextPos, item)
+          ? item
+          : { ...nextPos, dir: CW_DIR[item.dir] };
+      });
       phaseTiles = phaseTiles.map((item) => rotateSlotOnce(hub, item));
       rotors = rotors.map((item) => rotateSlotOnce(hub, item));
     }
