@@ -3088,7 +3088,7 @@ function buildCandidateBoard(
     ].includes(m)
   ).length;
   const newTerrainCount = mutations.filter((m) =>
-    ['ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS', 'ECHO'].includes(m)
+    ['ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
   ).length;
   const minWalls = blockingMutCount + newTerrainCount >= 2 ? 2 : 4;
   const maxWalls = blockingMutCount + newTerrainCount >= 2 ? 4 : 7;
