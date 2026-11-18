@@ -1236,7 +1236,12 @@ function resolveTileEntryEffects(
   const hasPortals = puzzle.mutations.includes('PORTALS');
   const hasConveyor = puzzle.mutations.includes('CONVEYOR');
   const hasCryo = puzzle.mutations.includes('CRYO_SLICK');
+  const hasReflectors = puzzle.mutations.includes('REFLECTORS');
+  const hasVents = puzzle.mutations.includes('VENTILATION');
   const visitedConveyors = new Set();
+  const visitedReflectors = new Set();
+  const visitedVents = new Set();
+  const visitedRotors = new Set();
   const MAX_FORCED_STEPS = 20;
 
   let pos = { ...currentPos };
@@ -1244,6 +1249,7 @@ function resolveTileEntryEffects(
 
   for (let iter = 0; iter < MAX_FORCED_STEPS; iter++) {
     let moved = false;
+    stateRef.movementDir = travelDir;
 
     // Portal check (at most once per turn)
     if (hasPortals && !teleportedThisTurn.used) {
@@ -1284,6 +1290,7 @@ function resolveTileEntryEffects(
         const pushSteps = getMassTier(puzzle, collected) === 'LIGHT' ? 2 : 1;
         for (let ps = 0; ps < pushSteps; ps++) {
           const nextPos = stepCoord(pos, conv.dir);
+          stateRef.movementDir = conv.dir;
           if (isTileBlocked(puzzle, boardView, stateRef, nextPos, turn, dronePos)) {
             break;
           }
@@ -1318,11 +1325,65 @@ function resolveTileEntryEffects(
       }
     }
 
+    // Ventilation: active every other turn, one-tile push in the vent's direction.
+    if (hasVents && !moved && turn % 2 === 0) {
+      const vent = (puzzle.ventTiles || []).find((v) => sameCoord(v, pos));
+      const ventKey = vent ? coordKey(vent) : null;
+      if (vent && !visitedVents.has(ventKey)) {
+        visitedVents.add(ventKey);
+        stateRef.movementDir = vent.dir;
+        const target = stepCoord(pos, vent.dir);
+        if (!isTileBlocked(puzzle, boardView, stateRef, target, turn, dronePos)) {
+          leftTiles.push({ ...pos });
+          events.push({ type: 'VENT_PUSH', dir: vent.dir, from: { ...pos }, to: { ...target } });
+          pos = target;
+          travelDir = vent.dir;
+          collectCellsAt(puzzle, pos, collected, events, turn);
+          checkPressurePlateTrigger(puzzle, boardView, pos, stateRef, pos, dronePos, events);
+          moved = true;
+        }
+      }
+    }
+
+    // Reflectors turn the incoming vector 90 degrees and carry the Courier one tile.
+    if (hasReflectors && !moved && travelDir) {
+      const reflector = (puzzle.reflectors || []).find((r) => sameCoord(r, pos));
+      const reflectorKey = reflector ? coordKey(reflector) : null;
+      if (reflector && !visitedReflectors.has(reflectorKey)) {
+        visitedReflectors.add(reflectorKey);
+        const reflectedDir = rotateDir(travelDir, reflector.rotation);
+        stateRef.movementDir = reflectedDir;
+        const target = stepCoord(pos, reflectedDir);
+        if (!isTileBlocked(puzzle, boardView, stateRef, target, turn, dronePos)) {
+          leftTiles.push({ ...pos });
+          events.push({ type: 'REFLECTOR', dir: reflectedDir, from: { ...pos }, to: { ...target } });
+          pos = target;
+          travelDir = reflectedDir;
+          collectCellsAt(puzzle, pos, collected, events, turn);
+          checkPressurePlateTrigger(puzzle, boardView, pos, stateRef, pos, dronePos, events);
+          moved = true;
+        }
+      }
+    }
+
+    // ROTORS queue a 90-degree change for the next voluntary input.
+    if (!moved) {
+      const rotor = (puzzle.rotors || []).find((r) => sameCoord(r, pos));
+      const rotorKey = rotor ? coordKey(rotor) : null;
+      if (rotor && !visitedRotors.has(rotorKey)) {
+        visitedRotors.add(rotorKey);
+        stateRef.pendingRotation = rotor.rotation;
+        events.push({ type: 'ROTOR_TRIGGER', rotation: rotor.rotation, at: { ...pos } });
+        moved = true;
+      }
+    }
+
     // Cryo-Slick ice momentum slide
     if (hasCryo && !moved) {
       const onCryo = boardView.cryoTiles.some((cr) => sameCoord(cr, pos));
       if (onCryo && travelDir) {
         const slidePos = stepCoord(pos, travelDir);
+        stateRef.movementDir = travelDir;
         if (!isTileBlocked(puzzle, boardView, stateRef, slidePos, turn, dronePos)) {
           leftTiles.push({ ...pos });
           events.push({
@@ -1376,6 +1437,7 @@ function applyMagneticCellForces(
       const repelDir =
         dr === -1 ? 'UP' : dr === 1 ? 'DOWN' : dc === -1 ? 'LEFT' : 'RIGHT';
       const target = stepCoord(current, repelDir);
+      stateRef.movementDir = repelDir;
       if (!isTileBlocked(puzzle, boardView, stateRef, target, turn, dronePos)) {
         leftTiles.push({ ...current });
         events.push({
@@ -1406,6 +1468,7 @@ function applyMagneticCellForces(
     if (current.r === c1.r && current.c !== c1.c && Math.abs(current.c - c1.c) <= 2) {
       const pullDir = c1.c > current.c ? 'RIGHT' : 'LEFT';
       const target = stepCoord(current, pullDir);
+      stateRef.movementDir = pullDir;
       if (!isTileBlocked(puzzle, boardView, stateRef, target, turn, dronePos)) {
         leftTiles.push({ ...current });
         events.push({
@@ -1488,6 +1551,8 @@ function applyMagnetismPull(
         }
       }
       const nextPos = { r: current.r, c: current.c + stepC };
+      pullDir = stepC > 0 ? 'RIGHT' : 'LEFT';
+      stateRef.movementDir = pullDir;
       if (
         clear &&
         !sameCoord(nextPos, mag) &&
@@ -1526,6 +1591,8 @@ function applyMagnetismPull(
         }
       }
       const nextPos = { r: current.r + stepR, c: current.c };
+      pullDir = stepR > 0 ? 'DOWN' : 'UP';
+      stateRef.movementDir = pullDir;
       if (
         clear &&
         !sameCoord(nextPos, mag) &&
@@ -1579,7 +1646,9 @@ function simulateTurn(puzzle, prevState, inputDir) {
   const boardView = getRotatedBoardSnapshot(puzzle, currentTurn);
   const overclockNow = hasOverclock && isOverclockActive(currentTurn);
   const phaseShiftNow = hasPhaseShift && isPhaseShiftActive(currentTurn);
-  const stepCount = overclockNow ? 2 : 1;
+  const inertiaNow = hasInertia && prevState.inertiaDir === moveDir;
+  // Overclock and inertia share a two-step cap; they never stack to exceed two steps.
+  const stepCount = overclockNow || inertiaNow ? 2 : 1;
 
   const events = [];
   const leftTiles = [{ ...prevState.courier }];
@@ -1592,16 +1661,20 @@ function simulateTurn(puzzle, prevState, inputDir) {
     decayTimers,
     infectedTiles,
     afterimagePos: prevState.afterimagePos,
-    blastDoorsOpen: prevState.blastDoorsOpen
+    blastDoorsOpen: prevState.blastDoorsOpen,
+    echoPos: prevState.echoPos ? { ...prevState.echoPos } : null,
+    movementDir: moveDir,
+    pendingRotation: 0
   };
 
   let pos = { ...prevState.courier };
   let dronePos = hasDrone && prevState.drone ? { ...prevState.drone } : null;
+  let echoPos = hasEcho && prevState.echoPos ? { ...prevState.echoPos } : null;
   let movedAtLeastOnce = false;
 
   // Step 1 & 2: Player voluntary movement (with Phase Shift, Overclock, and Tether zone guard)
   for (let s = 0; s < stepCount; s++) {
-    const nextCand = stepCoord(pos, inputDir);
+    const nextCand = stepCoord(pos, moveDir);
     if (!inBounds(nextCand.r, nextCand.c)) {
       break;
     }
@@ -1617,7 +1690,7 @@ function simulateTurn(puzzle, prevState, inputDir) {
 
     const hitsWall = boardView.grid[nextCand.r][nextCand.c] === 'WALL';
     if (hitsWall && phaseShiftNow && s === 0) {
-      const beyondWall = stepCoord(nextCand, inputDir);
+      const beyondWall = stepCoord(nextCand, moveDir);
       const tetherBlocksPhase =
         hasTether &&
         chebyshevDist(pos, puzzle.tetherPylon) <= 2 &&
@@ -1680,9 +1753,29 @@ function simulateTurn(puzzle, prevState, inputDir) {
     return { valid: false, reason: 'Blocked by wall, tether, or hazard', state: prevState };
   }
 
+  // Echo repeats the previous turn's direction, one action behind the Courier.
+  // It is solid and can trigger plates, but cannot collect Energy Cells.
+  if (hasEcho && echoPos && prevState.lastInputDir) {
+    const echoTarget = stepCoord(echoPos, prevState.lastInputDir);
+    const echoState = { ...liveState, echoPos: null, movementDir: prevState.lastInputDir };
+    if (
+      inBounds(echoTarget.r, echoTarget.c) &&
+      !sameCoord(echoTarget, pos) &&
+      !isTileBlocked(puzzle, boardView, echoState, echoTarget, currentTurn, dronePos)
+    ) {
+      events.push({ type: 'ECHO_MOVE', from: { ...echoPos }, to: { ...echoTarget } });
+      echoPos = echoTarget;
+      liveState.echoPos = echoPos;
+      checkPressurePlateTrigger(
+        puzzle, boardView, echoPos, liveState, pos, dronePos, events
+      );
+    }
+  }
+
   // Move Mirror Drone in opposite direction if active
   if (hasDrone && dronePos) {
-    const oppDir = OPPOSITE_DIR[inputDir];
+    const oppDir = OPPOSITE_DIR[moveDir];
+    liveState.movementDir = oppDir;
     const nextDrone = stepCoord(dronePos, oppDir);
     if (
       inBounds(nextDrone.r, nextDrone.c) &&
@@ -1707,12 +1800,14 @@ function simulateTurn(puzzle, prevState, inputDir) {
     }
   }
 
-  // Step 3: Resolve Portal, Conveyor & Cryo-Slick effects
+  liveState.movementDir = moveDir;
+
+  // Step 3: Resolve Portal, Conveyor, Ventilation, Reflectors & Cryo-Slick effects
   let entryRes = resolveTileEntryEffects(
     puzzle,
     boardView,
     pos,
-    inputDir,
+    moveDir,
     prevState.portalMode,
     currentTurn,
     liveState,
@@ -1875,6 +1970,16 @@ function simulateTurn(puzzle, prevState, inputDir) {
   // Step 7: Advance turn counter & apply Afterimage, Decay, Infection & Turntables
   const nextTurn = currentTurn + 1;
 
+  // Orbital cells advance clockwise after the player has had this turn to intercept them.
+  if (puzzle.mutations.includes('ORBITAL_CELLS')) {
+    for (let i = 0; i < 2; i++) {
+      if (collected[i]) continue;
+      const from = getCellPosition(puzzle, i, currentTurn);
+      const to = getCellPosition(puzzle, i, nextTurn);
+      if (!sameCoord(from, to)) events.push({ type: 'CELL_ORBIT', index: i, from, to });
+    }
+  }
+
   // Update Afterimage hard-light barrier (tile occupied 2 turns ago)
   let nextAfterimage = null;
   if (hasAfterimage && prevState.prevTurn1Pos) {
@@ -1990,9 +2095,25 @@ function simulateTurn(puzzle, prevState, inputDir) {
       turn: nextTurn,
       courier: pos,
       drone: dronePos,
+      echoPos,
+      lastInputDir: moveDir,
+      inertiaDir: hasInertia ? moveDir : null,
+      pendingRotation: liveState.pendingRotation || 0,
       prevTurn1Pos: nextPrevTurn1Pos,
       afterimagePos: nextAfterimage,
       blastDoorsOpen: liveState.blastDoorsOpen,
+      collectedCells: collected,
+      decayTimers,
+      infectedTiles,
+      gravityDir: nextGravityDir,
+      portalMode: nextPortalMode,
+      solved,
+      lastStepEvents: events
+    }
+  };
+}
+
+ liveState.blastDoorsOpen,
       collectedCells: collected,
       decayTimers,
       infectedTiles,
