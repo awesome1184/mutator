@@ -1641,8 +1641,13 @@ function simulateTurn(puzzle, prevState, inputDir) {
   const hasAfterimage = puzzle.mutations.includes('AFTERIMAGE');
   const hasTurntables = puzzle.mutations.includes('TURNTABLES');
   const hasTether = puzzle.mutations.includes('TETHER_PYLON') && puzzle.tetherPylon;
+  const hasEcho = puzzle.mutations.includes('ECHO');
+  const hasInertia = puzzle.mutations.includes('INERTIA');
 
   const currentTurn = prevState.turn;
+  const moveDir = prevState.pendingRotation
+    ? rotateDir(inputDir, prevState.pendingRotation)
+    : inputDir;
   const boardView = getRotatedBoardSnapshot(puzzle, currentTurn);
   const overclockNow = hasOverclock && isOverclockActive(currentTurn);
   const phaseShiftNow = hasPhaseShift && isPhaseShiftActive(currentTurn);
