@@ -2525,7 +2525,7 @@ function VfxCanvasOverlay({ puzzle, state, vfxLevel }) {
       if (curPuzzle.mutations.includes('MAGNETIC_CELLS')) {
         const wave = (frame % 50) / 50;
         if (!curState.collectedCells[0]) {
-          const c0 = curPuzzle.cells[0];
+          const c0 = getCellPosition(curPuzzle, 0, curState.turn);
           ctx.strokeStyle = `rgba(251, 113, 133, ${(1 - wave) * 0.45 * alphaScale})`;
           ctx.lineWidth = 1.5 * dpr;
           ctx.beginPath();
@@ -2539,7 +2539,7 @@ function VfxCanvasOverlay({ puzzle, state, vfxLevel }) {
           ctx.stroke();
         }
         if (!curState.collectedCells[1]) {
-          const c1 = curPuzzle.cells[1];
+          const c1 = getCellPosition(curPuzzle, 1, curState.turn);
           ctx.strokeStyle = `rgba(34, 211, 238, ${wave * 0.45 * alphaScale})`;
           ctx.lineWidth = 1.5 * dpr;
           ctx.beginPath();
@@ -3492,6 +3492,37 @@ function ActiveTelemetryStrip({ puzzle, state }) {
       text: 'MIRROR DRONE: LINKED'
     });
   }
+  if (puzzle.mutations.includes('REFLECTORS')) {
+    chips.push({ key: 'reflect', color: '#f0abfc', hot: false, text: `REFLECTORS: ${(puzzle.reflectors || []).length} PRISMS` });
+  }
+  if (puzzle.mutations.includes('ECHO')) {
+    chips.push({ key: 'echo', color: '#c4b5fd', hot: Boolean(state.echoPos), text: state.echoPos ? 'ECHO: FOLLOWING' : 'ECHO: OFFLINE' });
+  }
+  if (puzzle.mutations.includes('ONE_WAY_GATES')) {
+    chips.push({ key: 'oneway', color: '#67e8f9', hot: false, text: `ONE-WAY: ${(puzzle.oneWayGates || []).length} GATES` });
+  }
+  if (puzzle.mutations.includes('ORBITAL_CELLS')) {
+    chips.push({ key: 'orbit', color: '#fcd34d', hot: true, text: 'CELLS: ORBITING CLOCKWISE' });
+  }
+  if (puzzle.mutations.includes('PULSE_BEAM')) {
+    const line = getPulseBeamLine(puzzle, state.turn);
+    chips.push({ key: 'beam', color: '#fb7185', hot: Boolean(line && line.active), text: line ? `BEAM: ${line.active ? 'LIVE' : 'IDLE'} ${line.axis.toUpperCase()} ${line.index + 1}` : 'BEAM: OFFLINE' });
+  }
+  if (puzzle.mutations.includes('VENTILATION')) {
+    chips.push({ key: 'vent', color: '#5eead4', hot: state.turn % 2 === 0, text: state.turn % 2 === 0 ? 'VENTS: ACTIVE' : 'VENTS: RESTING' });
+  }
+  if (puzzle.mutations.includes('INERTIA')) {
+    chips.push({ key: 'inertia', color: '#fbbf24', hot: Boolean(state.inertiaDir), text: state.inertiaDir ? `INERTIA: ${state.inertiaDir} / 2 TILES` : 'INERTIA: READY' });
+  }
+  if (puzzle.mutations.includes('FLOOD')) {
+    chips.push({ key: 'flood', color: '#38bdf8', hot: getFloodDepth(puzzle, state.turn) > 0, text: `FLOOD: ${getFloodDepth(puzzle, state.turn)}/2` });
+  }
+  if (puzzle.mutations.includes('PHASE_LAYERS')) {
+    chips.push({ key: 'layers', color: '#a78bfa', hot: true, text: `PHASE: LAYER ${getActivePhaseLayer(state.turn) + 1}` });
+  }
+  if (puzzle.mutations.includes('ROTORS')) {
+    chips.push({ key: 'rotor', color: '#fda4af', hot: Boolean(state.pendingRotation), text: state.pendingRotation ? `ROTOR: NEXT INPUT ${state.pendingRotation > 0 ? '↻' : '↺'}` : 'ROTORS: ARMED' });
+  }
 
   return toHostElement(
     <div className="active-telemetry-strip" aria-label="Active Force Telemetry">
@@ -3574,6 +3605,28 @@ function MutationCards({ puzzle, state }) {
         const spreads = (state.turn + 1) % 2 === 0;
         return { label: spreads ? 'SPREADS NEXT' : 'Dormant', imminent: spreads };
       }
+      case 'REFLECTORS':
+        return { label: `${(puzzle.reflectors || []).length} PRISMS`, imminent: false };
+      case 'ECHO':
+        return { label: state.lastInputDir ? 'REPLAYING LAST MOVE' : 'WAITING FOR INPUT', imminent: Boolean(state.lastInputDir) };
+      case 'ONE_WAY_GATES':
+        return { label: `${(puzzle.oneWayGates || []).length} ARROW GATES`, imminent: false };
+      case 'ORBITAL_CELLS':
+        return { label: 'MOVING EACH TURN', imminent: true };
+      case 'PULSE_BEAM': {
+        const line = getPulseBeamLine(puzzle, state.turn);
+        return { label: line ? `${line.active ? 'LIVE' : 'IDLE'} ${line.index + 1}` : 'OFFLINE', imminent: Boolean(line && line.active) };
+      }
+      case 'VENTILATION':
+        return { label: state.turn % 2 === 0 ? 'AIRFLOW ACTIVE' : 'AIRFLOW RESTING', imminent: state.turn % 2 === 0 };
+      case 'INERTIA':
+        return { label: state.inertiaDir ? `2X ${state.inertiaDir}` : 'BUILD MOMENTUM', imminent: Boolean(state.inertiaDir) };
+      case 'FLOOD':
+        return { label: `WATER ${getFloodDepth(puzzle, state.turn)}/2`, imminent: getFloodDepth(puzzle, state.turn) > 0 };
+      case 'PHASE_LAYERS':
+        return { label: `LAYER ${getActivePhaseLayer(state.turn) + 1} SOLID`, imminent: true };
+      case 'ROTORS':
+        return { label: state.pendingRotation ? `NEXT INPUT ${state.pendingRotation > 0 ? '↻' : '↺'}` : 'ARMED', imminent: Boolean(state.pendingRotation) };
       default:
         return { label: 'ACTIVE', imminent: false };
     }
@@ -3698,6 +3751,13 @@ function formatTelemetryBanner(events) {
     if (ev.type === 'COLLECT_CELL') tags.push(`🔋 Energy Cell #${ev.index + 1}`);
     if (ev.type === 'PORTAL') tags.push(`◎ Warped ${ev.from}→${ev.to}`);
     if (ev.type === 'CONVEYOR') tags.push(`➤ Belt ${ev.dir}`);
+    if (ev.type === 'VENT_PUSH') tags.push(`≋ Vent ${ev.dir}`);
+    if (ev.type === 'REFLECTOR') tags.push(`↗ Prism ${ev.dir}`);
+    if (ev.type === 'ECHO_MOVE') tags.push('◌ Echo Replayed');
+    if (ev.type === 'ROTOR_TRIGGER') tags.push(`⤾ Next Input Rotates ${ev.rotation > 0 ? 'CW' : 'CCW'}`);
+    if (ev.type === 'CELL_ORBIT') tags.push(`⟳ Cell #${ev.index + 1} Shifted`);
+    if (ev.type === 'ONE_WAY_GATE') tags.push(`⇢ One-Way Gate ${ev.dir}`);
+    if (ev.type === 'INERTIA_STEP') tags.push('» Inertia Carry');
     if (ev.type === 'CRYO_SLIDE') tags.push(`❄ Ice Slide ${ev.dir}`);
     if (ev.type === 'MAGNET_PULL') tags.push('🧲 Magnetic Pull');
     if (ev.type === 'CELL_REPEL') tags.push('⊕ Cell Repulsion');
@@ -3722,6 +3782,9 @@ function buildCourierWaypoints(state) {
       ev.type === 'MOVE' ||
       ev.type === 'OVERCLOCK_STEP' ||
       ev.type === 'CONVEYOR' ||
+      ev.type === 'VENT_PUSH' ||
+      ev.type === 'REFLECTOR' ||
+      ev.type === 'INERTIA_STEP' ||
       ev.type === 'CRYO_SLIDE' ||
       ev.type === 'MAGNET_PULL' ||
       ev.type === 'CELL_REPEL' ||
@@ -3754,6 +3817,8 @@ function GameGrid({
   const prevTurnRef = useRef(state.turn);
   const exitUnlocked = state.collectedCells[0] && state.collectedCells[1];
   const closedPolarity = getActiveGatePolarity(state.turn);
+  const pulseBeamLine = getPulseBeamLine(puzzle, state.turn);
+  const activePhaseLayer = getActivePhaseLayer(state.turn);
   const boardView = useMemo(
     () => getRotatedBoardSnapshot(puzzle, state.turn),
     [puzzle, state.turn]
@@ -3923,12 +3988,21 @@ function GameGrid({
               sameCoord(pp, coord)
             );
             const isCryo = boardView.cryoTiles.some((cr) => sameCoord(cr, coord));
+            const reflector = (puzzle.reflectors || []).find((item) => sameCoord(item, coord));
+            const oneWayGate = (puzzle.oneWayGates || []).find((item) => sameCoord(item, coord));
+            const vent = (puzzle.ventTiles || []).find((item) => sameCoord(item, coord));
+            const rotor = (puzzle.rotors || []).find((item) => sameCoord(item, coord));
+            const phaseTile = (puzzle.phaseTiles || []).find((item) => sameCoord(item, coord));
+            const pulseBeamTile = pulseBeamLine && (
+              pulseBeamLine.axis === 'row' ? r === pulseBeamLine.index : c === pulseBeamLine.index
+            );
+            const isFloodedTile = isFlooded(puzzle, state.turn, coord);
             const isExit = sameCoord(puzzle.exit, coord);
 
             const hasCell0 =
-              !state.collectedCells[0] && sameCoord(puzzle.cells[0], coord);
+              !state.collectedCells[0] && sameCoord(getCellPosition(puzzle, 0, state.turn), coord);
             const hasCell1 =
-              !state.collectedCells[1] && sameCoord(puzzle.cells[1], coord);
+              !state.collectedCells[1] && sameCoord(getCellPosition(puzzle, 1, state.turn), coord);
 
             const classes = ['tile'];
             if (isWall && !isMagnet && !isTurntable && !isTetherPylon) {
@@ -3955,6 +4029,13 @@ function GameGrid({
             }
             if (portal) classes.push('portal');
             if (isCryo) classes.push('cryo');
+            if (reflector) classes.push('reflector');
+            if (oneWayGate) classes.push('one-way-gate');
+            if (vent) classes.push('vent');
+            if (rotor) classes.push('rotor');
+            if (phaseTile) classes.push(phaseTile.layer === activePhaseLayer ? 'phase-tile-solid' : 'phase-tile-open');
+            if (pulseBeamTile) classes.push(pulseBeamLine.active ? 'pulse-beam-active' : 'pulse-beam-idle');
+            if (isFloodedTile) classes.push('flooded');
             if (gate) {
               const isClosed = gate.polarity === closedPolarity;
               classes.push(
@@ -3985,6 +4066,13 @@ function GameGrid({
                 {isTurntable && <span className="tile-tag gear-spin">⚙</span>}
                 {isTetherPylon && <span className="tile-tag tether-icon">⌖</span>}
                 {isAfterimage && <span className="tile-tag">❐</span>}
+                {reflector && <span className="tile-tag">{reflector.rotation > 0 ? '↻' : '↺'}</span>}
+                {oneWayGate && <span className="tile-tag">{DIR_ARROWS[oneWayGate.dir]}</span>}
+                {vent && <span className="tile-tag">{DIR_ARROWS[vent.dir]}</span>}
+                {rotor && <span className="tile-tag">{rotor.rotation > 0 ? '⤾' : '⤿'}</span>}
+                {phaseTile && <span className="tile-tag">{phaseTile.layer === activePhaseLayer ? '◫' : '◩'}</span>}
+                {pulseBeamTile && <span className="tile-tag">{pulseBeamLine.active ? '━' : '┄'}</span>}
+                {isFloodedTile && <span className="tile-tag">≈</span>}
 
                 {(hasCell0 || hasCell1) && (
                   <div className="energy-cell-wrap" title="Energy Cell">
@@ -4070,6 +4158,18 @@ function GameGrid({
             <div className="mirror-drone-bot" title="Mirror Drone">
               ❖
             </div>
+          </div>
+        )}
+
+        {/* Echo repeats the previous Courier input one turn later. */}
+        {state.echoPos && (
+          <div
+            className="entity-slot"
+            style={{
+              transform: `translate3d(calc(${state.echoPos.c} * (100% + 4px)), calc(${state.echoPos.r} * (100% + 4px)), 0)`
+            }}
+          >
+            <div className="echo-bot" title="Echo">◌</div>
           </div>
         )}
 
@@ -4403,7 +4503,7 @@ export default function App() {
         unlock('perfect_run', nextOptimalCount >= 1);
         unlock('adaptable', nextPairs.length >= 5);
         unlock('survivor', nextThree);
-        unlock('mutation_master', nextPairs.length >= 136);
+        unlock('mutation_master', nextPairs.length >= 351);
         unlock('unbroken', nextMaxStreak >= 7);
 
         const updated = {
@@ -5061,6 +5161,52 @@ export default function App() {
           border-color: rgba(103, 232, 249, 0.5);
           color: #67e8f9;
         }
+        .tile.reflector {
+          background: rgba(240, 171, 252, 0.16);
+          border-color: #f0abfc;
+          color: #f5d0fe;
+        }
+        .tile.one-way-gate {
+          background: rgba(103, 232, 249, 0.13);
+          border: 1px dashed #67e8f9;
+          color: #a5f3fc;
+        }
+        .tile.vent {
+          background: rgba(94, 234, 212, 0.13);
+          border-color: #5eead4;
+          color: #99f6e4;
+        }
+        .tile.rotor {
+          background: rgba(253, 164, 175, 0.14);
+          border-color: #fda4af;
+          color: #fecdd3;
+        }
+        .tile.phase-tile-solid {
+          background: rgba(167, 139, 250, 0.24);
+          border: 2px solid #a78bfa;
+          color: #ddd6fe;
+        }
+        .tile.phase-tile-open {
+          border: 1px dashed rgba(167, 139, 250, 0.6);
+          color: rgba(196, 181, 253, 0.8);
+        }
+        .tile.pulse-beam-active {
+          background: rgba(251, 113, 133, 0.24);
+          border-color: #fb7185;
+          box-shadow: inset 0 0 10px rgba(251, 113, 133, 0.6);
+          color: #fecdd3;
+        }
+        .tile.pulse-beam-idle {
+          border-color: rgba(251, 113, 133, 0.45);
+          border-style: dashed;
+          color: rgba(251, 113, 133, 0.75);
+        }
+        .tile.flooded {
+          background: rgba(14, 165, 233, 0.3);
+          border-color: #38bdf8;
+          color: #bae6fd;
+          opacity: 0.75;
+        }
         .tile.cryo::after {
           content: '';
           position: absolute;
@@ -5205,6 +5351,19 @@ export default function App() {
           place-items: center;
           font-weight: 900;
           font-size: 12px;
+          animation: dronePulse 1.8s ease-in-out infinite alternate;
+        }
+        .echo-bot {
+          width: 68%;
+          height: 68%;
+          border-radius: 50%;
+          background: rgba(196, 181, 253, 0.16);
+          border: 1.5px dashed #c4b5fd;
+          color: #ddd6fe;
+          display: grid;
+          place-items: center;
+          font-size: 19px;
+          box-shadow: 0 0 12px rgba(196, 181, 253, 0.35);
           animation: dronePulse 1.8s ease-in-out infinite alternate;
         }
         .decay-badge {
@@ -5699,7 +5858,7 @@ export default function App() {
               <div className="stat-box">
                 <div className="stat-label">Pairs</div>
                 <div className="stat-value">
-                  {profile.completedPairs.length}/136
+                  {profile.completedPairs.length}/351
                 </div>
               </div>
               <div className="stat-box">
@@ -5780,6 +5939,9 @@ export default function App() {
             <div>
               4. <strong>Ratings:</strong> Optimal moves = 3★, +1 to +3 moves =
               2★, +4 or more = 1★.
+            </div>
+            <div>
+              5. <strong>New modules:</strong> Reflectors bend movement; Echo replays your last direction; One-Way Gates require matching arrows; Orbital Cells move after each turn; Pulse Beam and Flood mark dangerous tiles in advance; Vents push on alternating turns; Inertia gives a second tile when you repeat a direction; Phase Layers swap every two turns; Rotors turn your next input.
             </div>
           </div>
         )}
