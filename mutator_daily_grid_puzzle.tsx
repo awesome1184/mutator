@@ -3252,9 +3252,9 @@ function buildVerifiedFallbackPuzzle(
       turntables: mutations.includes('TURNTABLES') ? [{ r: 3, c: 2 }] : [],
       tetherPylon: mutations.includes('TETHER_PYLON') ? { r: 3, c: 3 } : null,
       initialInfected: mutations.includes('INFECTION') ? [{ r: 0, c: 2 }] : [],
-      reflectors: mutations.includes('REFLECTORS') ? [{ r: 2, c: 2, rotation: 1 }] : [],
-      echoStart: mutations.includes('ECHO') ? { r: 4, c: 5 } : null,
-      oneWayGates: mutations.includes('ONE_WAY_GATES') ? [{ r: 2, c: 3, dir: 'RIGHT' }] : [],
+      reflectors: mutations.includes('REFLECTORS') ? [{ r: 2, c: 0, rotation: 1 }] : [],
+      echoStart: mutations.includes('ECHO') ? { r: 4, c: 6 } : null,
+      oneWayGates: mutations.includes('ONE_WAY_GATES') ? [{ r: 0, c: 3, dir: 'RIGHT' }] : [],
       cellOrbitPaths: mutations.includes('ORBITAL_CELLS')
         ? [
             [{ r: 1, c: 5 }, { r: 1, c: 6 }, { r: 2, c: 6 }, { r: 2, c: 5 }],
@@ -3262,9 +3262,9 @@ function buildVerifiedFallbackPuzzle(
           ]
         : [],
       pulseBeam: mutations.includes('PULSE_BEAM') ? { axis: 'row', startIndex: 0, direction: 1 } : null,
-      ventTiles: mutations.includes('VENTILATION') ? [{ r: 2, c: 2, dir: 'DOWN' }] : [],
+      ventTiles: mutations.includes('VENTILATION') ? [{ r: 2, c: 0, dir: 'DOWN' }] : [],
       flood: mutations.includes('FLOOD') ? { edge: 'TOP' } : null,
-      phaseTiles: mutations.includes('PHASE_LAYERS') ? [{ r: 2, c: 3, layer: 0 }] : [],
+      phaseTiles: mutations.includes('PHASE_LAYERS') ? [{ r: 6, c: 3, layer: 0 }] : [],
       rotors: mutations.includes('ROTORS') ? [{ r: 4, c: 2, rotation: 1 }] : [],
       infectionPriority: ['DOWN', 'RIGHT', 'LEFT', 'UP'],
       optimalMoves: 12,
