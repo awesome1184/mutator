@@ -929,6 +929,11 @@ function getRotatedBoardSnapshot(puzzle, turn) {
   let phaseGates = puzzle.phaseGates.map((g) => ({ ...g }));
   let blastDoors = puzzle.blastDoors.map((d) => ({ ...d }));
   let pressurePlates = puzzle.pressurePlates.map((p) => ({ ...p }));
+  let reflectors = (puzzle.reflectors || []).map((p) => ({ ...p }));
+  let oneWayGates = (puzzle.oneWayGates || []).map((p) => ({ ...p }));
+  let ventTiles = (puzzle.ventTiles || []).map((p) => ({ ...p }));
+  let phaseTiles = (puzzle.phaseTiles || []).map((p) => ({ ...p }));
+  let rotors = (puzzle.rotors || []).map((p) => ({ ...p }));
 
   if (phase === 0) {
     return {
@@ -937,7 +942,12 @@ function getRotatedBoardSnapshot(puzzle, turn) {
       cryoTiles,
       phaseGates,
       blastDoors,
-      pressurePlates
+      pressurePlates,
+      reflectors,
+      oneWayGates,
+      ventTiles,
+      phaseTiles,
+      rotors
     };
   }
 
@@ -983,6 +993,17 @@ function getRotatedBoardSnapshot(puzzle, turn) {
       }));
       blastDoors = blastDoors.map((bd) => rotateSlotOnce(hub, bd));
       pressurePlates = pressurePlates.map((pp) => rotateSlotOnce(hub, pp));
+      reflectors = reflectors.map((item) => rotateSlotOnce(hub, item));
+      oneWayGates = oneWayGates.map((item) => ({
+        ...rotateSlotOnce(hub, item),
+        dir: CW_DIR[item.dir]
+      }));
+      ventTiles = ventTiles.map((item) => ({
+        ...rotateSlotOnce(hub, item),
+        dir: CW_DIR[item.dir]
+      }));
+      phaseTiles = phaseTiles.map((item) => rotateSlotOnce(hub, item));
+      rotors = rotors.map((item) => rotateSlotOnce(hub, item));
     }
   }
 
@@ -992,7 +1013,12 @@ function getRotatedBoardSnapshot(puzzle, turn) {
     cryoTiles,
     phaseGates,
     blastDoors,
-    pressurePlates
+    pressurePlates,
+    reflectors,
+    oneWayGates,
+    ventTiles,
+    phaseTiles,
+    rotors
   };
 }
 
@@ -1015,11 +1041,11 @@ function isImmuneToDecay(puzzle, boardView, pos) {
   if (puzzle.tetherPylon && sameCoord(puzzle.tetherPylon, pos)) return true;
   if (boardView.blastDoors.some((bd) => sameCoord(bd, pos))) return true;
   if (boardView.pressurePlates.some((pp) => sameCoord(pp, pos))) return true;
-  if ((puzzle.reflectors || []).some((tile) => sameCoord(tile, pos))) return true;
-  if ((puzzle.oneWayGates || []).some((tile) => sameCoord(tile, pos))) return true;
-  if ((puzzle.ventTiles || []).some((tile) => sameCoord(tile, pos))) return true;
-  if ((puzzle.rotors || []).some((tile) => sameCoord(tile, pos))) return true;
-  if ((puzzle.phaseTiles || []).some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.reflectors.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.oneWayGates.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.ventTiles.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.rotors.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.phaseTiles.some((tile) => sameCoord(tile, pos))) return true;
   const key = coordKey(pos);
   if (puzzle.initialInfected.some((inf) => coordKey(inf) === key)) return true;
   return false;
@@ -1075,6 +1101,11 @@ function isImmuneToInfection(puzzle, boardView, pos) {
   if (puzzle.tetherPylon && sameCoord(puzzle.tetherPylon, pos)) return true;
   if (boardView.blastDoors.some((bd) => sameCoord(bd, pos))) return true;
   if (boardView.pressurePlates.some((pp) => sameCoord(pp, pos))) return true;
+  if (boardView.reflectors.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.oneWayGates.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.ventTiles.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.rotors.some((tile) => sameCoord(tile, pos))) return true;
+  if (boardView.phaseTiles.some((tile) => sameCoord(tile, pos))) return true;
   return false;
 }
 
@@ -1178,14 +1209,14 @@ function isTileBlocked(
   if (stateRef.afterimagePos && sameCoord(pos, stateRef.afterimagePos)) return true;
 
   if (puzzle.mutations.includes('ONE_WAY_GATES')) {
-    const gate = (puzzle.oneWayGates || []).find((g) => sameCoord(g, pos));
+    const gate = boardView.oneWayGates.find((g) => sameCoord(g, pos));
     if (gate && stateRef.movementDir && stateRef.movementDir !== gate.dir) return true;
   }
   if (isPulseBeamBlocked(puzzle, turn, pos)) return true;
   if (isFlooded(puzzle, turn, pos)) return true;
   if (
     puzzle.mutations.includes('PHASE_LAYERS') &&
-    (puzzle.phaseTiles || []).some(
+    boardView.phaseTiles.some(
       (tile) => sameCoord(tile, pos) && tile.layer === getActivePhaseLayer(turn)
     )
   ) return true;
@@ -1362,7 +1393,7 @@ function resolveTileEntryEffects(
 
     // Ventilation: active every other turn, one-tile push in the vent's direction.
     if (hasVents && !moved && turn % 2 === 0) {
-      const vent = (puzzle.ventTiles || []).find((v) => sameCoord(v, pos));
+      const vent = boardView.ventTiles.find((v) => sameCoord(v, pos));
       const ventKey = vent ? coordKey(vent) : null;
       if (vent && !visitedVents.has(ventKey)) {
         visitedVents.add(ventKey);
@@ -1382,7 +1413,7 @@ function resolveTileEntryEffects(
 
     // Reflectors turn the incoming vector 90 degrees and carry the Courier one tile.
     if (hasReflectors && !moved && travelDir) {
-      const reflector = (puzzle.reflectors || []).find((r) => sameCoord(r, pos));
+      const reflector = boardView.reflectors.find((r) => sameCoord(r, pos));
       const reflectorKey = reflector ? coordKey(reflector) : null;
       if (reflector && !visitedReflectors.has(reflectorKey)) {
         visitedReflectors.add(reflectorKey);
@@ -1403,7 +1434,7 @@ function resolveTileEntryEffects(
 
     // ROTORS queue a 90-degree change for the next voluntary input.
     if (!moved && puzzle.mutations.includes('ROTORS')) {
-      const rotor = (puzzle.rotors || []).find((r) => sameCoord(r, pos));
+      const rotor = boardView.rotors.find((r) => sameCoord(r, pos));
       const rotorKey = rotor ? coordKey(rotor) : null;
       if (rotor && !visitedRotors.has(rotorKey)) {
         visitedRotors.add(rotorKey);
@@ -2095,6 +2126,10 @@ function simulateTurn(puzzle, prevState, inputDir) {
       }
       if (dronePos) {
         dronePos = rotateAroundHub(hub, dronePos);
+      }
+      if (echoPos) {
+        echoPos = rotateAroundHub(hub, echoPos);
+        liveState.echoPos = echoPos;
       }
       // Rotate active decay timers & infected tiles on the 4 turntable slots
       const ring = [
@@ -3266,10 +3301,10 @@ function buildVerifiedFallbackPuzzle(
       ...base.oneWayGates,
       ...base.ventTiles,
       ...base.phaseTiles,
-      ...base.rotors,
-      ...base.cellOrbitPaths.flat()
+      ...base.rotors
     ];
     if (base.droneStart) keepFloor.push(base.droneStart);
+    if (base.echoStart) keepFloor.push(base.echoStart);
     for (const c of keepFloor) {
       base.grid[c.r][c.c] = 'FLOOR';
     }
@@ -3351,6 +3386,28 @@ function buildVerifiedFallbackPuzzle(
     optimalPath: [],
     verifiedRelevant: true
   };
+  const emergencyKeepFloor = [
+    emergency.start,
+    ...emergency.cells,
+    emergency.exit,
+    ...emergency.conveyors,
+    ...emergency.portals,
+    ...emergency.phaseGates,
+    ...emergency.blastDoors,
+    ...emergency.pressurePlates,
+    ...emergency.cryoTiles,
+    ...emergency.reflectors,
+    ...emergency.oneWayGates,
+    ...emergency.ventTiles,
+    ...emergency.phaseTiles,
+    ...emergency.rotors,
+    ...emergency.cellOrbitPaths.flat()
+  ];
+  if (emergency.echoStart) emergencyKeepFloor.push(emergency.echoStart);
+  if (emergency.droneStart) emergencyKeepFloor.push(emergency.droneStart);
+  emergencyKeepFloor.forEach((coord) => {
+    emergency.grid[coord.r][coord.c] = 'FLOOR';
+  });
   const emergencySolved = solvePuzzleBFS(emergency, 34, 75000);
   emergency.optimalMoves = emergencySolved.optimalMoves || 10;
   emergency.optimalPath = emergencySolved.solutionPath || [];
@@ -4065,11 +4122,11 @@ function GameGrid({
               sameCoord(pp, coord)
             );
             const isCryo = boardView.cryoTiles.some((cr) => sameCoord(cr, coord));
-            const reflector = (puzzle.reflectors || []).find((item) => sameCoord(item, coord));
-            const oneWayGate = (puzzle.oneWayGates || []).find((item) => sameCoord(item, coord));
-            const vent = (puzzle.ventTiles || []).find((item) => sameCoord(item, coord));
-            const rotor = (puzzle.rotors || []).find((item) => sameCoord(item, coord));
-            const phaseTile = (puzzle.phaseTiles || []).find((item) => sameCoord(item, coord));
+            const reflector = boardView.reflectors.find((item) => sameCoord(item, coord));
+            const oneWayGate = boardView.oneWayGates.find((item) => sameCoord(item, coord));
+            const vent = boardView.ventTiles.find((item) => sameCoord(item, coord));
+            const rotor = boardView.rotors.find((item) => sameCoord(item, coord));
+            const phaseTile = boardView.phaseTiles.find((item) => sameCoord(item, coord));
             const pulseBeamTile = pulseBeamLine && (
               pulseBeamLine.axis === 'row' ? r === pulseBeamLine.index : c === pulseBeamLine.index
             );
