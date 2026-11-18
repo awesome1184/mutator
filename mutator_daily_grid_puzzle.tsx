@@ -174,6 +174,26 @@ const SIGNATURE_JINXES = {
   'GRAVITY+MAGNETIC_CELLS': {
     tag: 'ORBITAL DRIFT',
     text: 'Cell #1 (+) repels you away on orthogonal approach—use Gravity pull or diagonal alignment to drop straight onto it.'
+  },
+  'BLAST_DOORS+ECHO': {
+    tag: 'DELAYED SWITCH',
+    text: 'Echo repeats your previous direction one turn later and can cross a Pressure Plate to toggle doors after the Courier has moved on.'
+  },
+  'CRYO_SLICK+REFLECTORS': {
+    tag: 'PRISMATIC SLIDE',
+    text: 'Ice carries your momentum into a prism, which redirects the slide by 90° for a sharp turn around obstacles.'
+  },
+  'INERTIA+ROTORS': {
+    tag: 'SPIN CYCLE',
+    text: 'A rotor changes your next input; repeating that transformed direction then builds inertia for a two-tile move.'
+  },
+  'FLOOD+ORBITAL_CELLS': {
+    tag: 'RISING TARGETS',
+    text: 'The cells keep orbiting while the edge flood advances, so intercept their safe-side positions before the water closes the route.'
+  },
+  'ONE_WAY_GATES+REFLECTORS': {
+    tag: 'PRISM LOCK',
+    text: 'A reflector can bend your trajectory toward a one-way gate, but the new direction must match the gate arrow.'
   }
 };
 
@@ -1067,11 +1087,13 @@ function spreadInfectionOnce(
   blastDoorsOpen,
   turn,
   courierPos,
-  dronePos
+  dronePos,
+  echoPos = null
 ) {
   const infectedSet = new Set(infectedTiles);
   const courierKey = coordKey(courierPos);
   const droneKey = dronePos ? coordKey(dronePos) : null;
+  const echoKey = echoPos ? coordKey(echoPos) : null;
   const afterKey = afterimagePos ? coordKey(afterimagePos) : null;
 
   for (const sourceKey of infectedTiles) {
@@ -1081,7 +1103,7 @@ function spreadInfectionOnce(
       const candKey = coordKey(candidate);
 
       if (infectedSet.has(candKey)) continue;
-      if (candKey === courierKey || candKey === droneKey || candKey === afterKey) {
+      if (candKey === courierKey || candKey === droneKey || candKey === echoKey || candKey === afterKey) {
         continue;
       }
       if (decayTimers[candKey] === 0) continue;
@@ -1216,7 +1238,10 @@ function checkPressurePlateTrigger(
   // If doors are currently open, verify closing them won't crush Courier or Mirror Drone
   if (stateRef.blastDoorsOpen) {
     const occupiedDoor = boardView.blastDoors.some(
-      (bd) => sameCoord(bd, courierPos) || (dronePos && sameCoord(bd, dronePos))
+      (bd) =>
+        sameCoord(bd, courierPos) ||
+        (dronePos && sameCoord(bd, dronePos)) ||
+        (stateRef.echoPos && sameCoord(bd, stateRef.echoPos))
     );
     if (occupiedDoor) return;
   }
@@ -2039,7 +2064,8 @@ function simulateTurn(puzzle, prevState, inputDir) {
       liveState.blastDoorsOpen,
       nextTurn,
       pos,
-      dronePos
+      dronePos,
+      echoPos
     );
     infectedTiles = spreadRes.nextInfected;
     if (spreadRes.spreadTo) {
@@ -3022,11 +3048,12 @@ function buildCandidateBoard(
       'TURNTABLES',
       'MAGNETISM',
       'TETHER_PYLON',
-      'AFTERIMAGE'
+      'AFTERIMAGE',
+      'ECHO'
     ].includes(m)
   ).length;
   const newTerrainCount = mutations.filter((m) =>
-    ['ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
+    ['ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS', 'ECHO'].includes(m)
   ).length;
   const minWalls = blockingMutCount + newTerrainCount >= 2 ? 2 : 4;
   const maxWalls = blockingMutCount + newTerrainCount >= 2 ? 4 : 7;
@@ -3191,9 +3218,14 @@ function buildVerifiedFallbackPuzzle(
       tetherPylon: mutations.includes('TETHER_PYLON') ? { r: 3, c: 3 } : null,
       initialInfected: mutations.includes('INFECTION') ? [{ r: 0, c: 2 }] : [],
       reflectors: mutations.includes('REFLECTORS') ? [{ r: 2, c: 2, rotation: 1 }] : [],
-      echoStart: mutations.includes('ECHO') ? { r: 5, c: 5 } : null,
+      echoStart: mutations.includes('ECHO') ? { r: 4, c: 5 } : null,
       oneWayGates: mutations.includes('ONE_WAY_GATES') ? [{ r: 2, c: 3, dir: 'RIGHT' }] : [],
-      cellOrbitPaths: [],
+      cellOrbitPaths: mutations.includes('ORBITAL_CELLS')
+        ? [
+            [{ r: 1, c: 5 }, { r: 1, c: 6 }, { r: 2, c: 6 }, { r: 2, c: 5 }],
+            [{ r: 5, c: 1 }, { r: 4, c: 1 }, { r: 4, c: 0 }, { r: 5, c: 0 }]
+          ]
+        : [],
       pulseBeam: mutations.includes('PULSE_BEAM') ? { axis: 'row', startIndex: 0, direction: 1 } : null,
       ventTiles: mutations.includes('VENTILATION') ? [{ r: 2, c: 2, dir: 'DOWN' }] : [],
       flood: mutations.includes('FLOOD') ? { edge: 'TOP' } : null,
@@ -3222,13 +3254,20 @@ function buildVerifiedFallbackPuzzle(
       base.cells[0],
       base.cells[1],
       base.exit,
+      ...base.cellOrbitPaths.flat(),
       ...base.conveyors,
       ...base.portals,
       ...base.phaseGates,
       ...base.blastDoors,
       ...base.pressurePlates,
       ...base.cryoTiles,
-      ...base.initialInfected
+      ...base.initialInfected,
+      ...base.reflectors,
+      ...base.oneWayGates,
+      ...base.ventTiles,
+      ...base.phaseTiles,
+      ...base.rotors,
+      ...base.cellOrbitPaths.flat()
     ];
     if (base.droneStart) keepFloor.push(base.droneStart);
     for (const c of keepFloor) {
@@ -3293,6 +3332,20 @@ function buildVerifiedFallbackPuzzle(
     turntables: [],
     tetherPylon: null,
     initialInfected: mutations.includes('INFECTION') ? [{ r: 0, c: 6 }] : [],
+    reflectors: mutations.includes('REFLECTORS') ? [{ r: 2, c: 2, rotation: 1 }] : [],
+    echoStart: mutations.includes('ECHO') ? { r: 4, c: 4 } : null,
+    oneWayGates: mutations.includes('ONE_WAY_GATES') ? [{ r: 2, c: 3, dir: 'RIGHT' }] : [],
+    cellOrbitPaths: mutations.includes('ORBITAL_CELLS')
+      ? [
+          [{ r: 1, c: 5 }, { r: 1, c: 6 }, { r: 2, c: 6 }, { r: 2, c: 5 }],
+          [{ r: 5, c: 1 }, { r: 4, c: 1 }, { r: 4, c: 0 }, { r: 5, c: 0 }]
+        ]
+      : [],
+    pulseBeam: mutations.includes('PULSE_BEAM') ? { axis: 'row', startIndex: 0, direction: 1 } : null,
+    ventTiles: mutations.includes('VENTILATION') ? [{ r: 2, c: 2, dir: 'DOWN' }] : [],
+    flood: mutations.includes('FLOOD') ? { edge: 'TOP' } : null,
+    phaseTiles: mutations.includes('PHASE_LAYERS') ? [{ r: 2, c: 5, layer: 0 }] : [],
+    rotors: mutations.includes('ROTORS') ? [{ r: 4, c: 2, rotation: 1 }] : [],
     infectionPriority: ['DOWN', 'LEFT', 'RIGHT', 'UP'],
     optimalMoves: 10,
     optimalPath: [],
@@ -4665,7 +4718,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeTab, handleMove, handleUndo, handleReset]);
 
-  // All 136 two-mutation pairings for sandbox exploration
+  // All 351 two-mutation pairings for sandbox exploration
   const allPairings = useMemo(() => {
     const pairs = [];
     for (let i = 0; i < ALL_MUTATIONS.length; i++) {
