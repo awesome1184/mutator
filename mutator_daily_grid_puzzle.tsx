@@ -4605,8 +4605,15 @@ export default function App() {
         };
 
         const nextPairs = [...prev.completedPairs];
-        if (puzzle.mutations.length === 2) {
-          const pk = canonicalPairKey(puzzle.mutations);
+        // Payload Mass may promote a compatible host as a third active mutation.
+        // Count the original selected pair, not the generated three-mutation set.
+        const selectedPair = puzzle.promotedThirdMutation
+          ? puzzle.mutations.filter((m) => m !== puzzle.promotedThirdMutation)
+          : puzzle.mutations.length === 2
+            ? puzzle.mutations
+            : null;
+        if (selectedPair && selectedPair.length === 2) {
+          const pk = canonicalPairKey(selectedPair);
           if (!nextPairs.includes(pk)) nextPairs.push(pk);
         }
 
