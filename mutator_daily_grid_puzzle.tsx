@@ -1304,10 +1304,10 @@ function resolveTileEntryEffects(
   const hasCryo = puzzle.mutations.includes('CRYO_SLICK');
   const hasReflectors = puzzle.mutations.includes('REFLECTORS');
   const hasVents = puzzle.mutations.includes('VENTILATION');
-  const visitedConveyors = new Set();
-  const visitedReflectors = new Set();
-  const visitedVents = new Set();
-  const visitedRotors = new Set();
+  const visitedConveyors = teleportedThisTurn.visitedConveyors || (teleportedThisTurn.visitedConveyors = new Set());
+  const visitedReflectors = teleportedThisTurn.visitedReflectors || (teleportedThisTurn.visitedReflectors = new Set());
+  const visitedVents = teleportedThisTurn.visitedVents || (teleportedThisTurn.visitedVents = new Set());
+  const visitedRotors = teleportedThisTurn.visitedRotors || (teleportedThisTurn.visitedRotors = new Set());
   const MAX_FORCED_STEPS = 20;
 
   let pos = { ...currentPos };
