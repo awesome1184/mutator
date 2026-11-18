@@ -22,4 +22,6 @@ npm run preview
 
 The `Deploy MUTATOR to GitHub Pages` workflow builds the Vite app and publishes it whenever a commit is pushed to `main`. The production build uses the `/mutator/` base path for this repository.
 
+Before the first deployment, open **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
+
 The playable game remains in `mutator_daily_grid_puzzle.tsx`; the Vite files provide the web entry point and deployment setup.
