@@ -4,7 +4,7 @@ A daily grid puzzle about adapting to changing rules. Collect both Energy Cells,
 
 ## Run locally
 
-Requires Node.js 20.19+ (Node.js 22 is recommended).
+Requires Node.js 20.19+ or 22.12+ (Node.js 22.12+ is recommended).
 
 ```bash
 npm install
