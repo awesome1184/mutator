@@ -191,3 +191,79 @@ test('every interaction note names two real mutations', async () => {
   const all = interactionNotes(ALL_MUTATIONS);
   assert.ok(all.length >= 25);
 });
+
+test('crates slide on ice', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'CRYO_SLICK'], ...far, start: co(4, 0), crates: [co(4, 1)], ice: [co(4, 2), co(4, 3)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(4, 4)]);
+});
+
+test('belts carry crates', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'CONVEYOR'], ...far, start: co(4, 0), crates: [co(4, 1)], conveyors: [{ r: 4, c: 2, dir: 'D' }] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(5, 2)]);
+});
+
+test('crates warp through portals', () => {
+  const w = compileWorld(
+    makePuzzle({ mutations: ['CRATES', 'PORTALS'], ...far, start: co(4, 0), crates: [co(4, 1)], portals: [{ r: 4, c: 2, label: 0 }, { r: 6, c: 5, label: 1 }, { r: 2, c: 6, label: 2 }, { r: 1, c: 3, label: 3 }] })
+  );
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(6, 5)]);
+});
+
+test('a crate fills a pit and the pit becomes floor', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'DECAY'], ...far, start: co(3, 5), crates: [co(3, 2)], cracked: [co(3, 4)] }));
+  // Cross the cracked tile to make a pit, walk round, then push the crate in.
+  const r = replay(w, ['L', 'U', 'L', 'L', 'L', 'D', 'R', 'R']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+  const last = r.states.at(-1)!;
+  assert.equal(last.decay[at(3, 4)], -2);
+  // The filled pit is floor now.
+  assert.ok(step(w, last, 'R').ok);
+  assert.deepEqual(last.crates, []);
+});
+
+test('phase shift passes through a crate', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'PHASE_SHIFT'], ...far, start: co(4, 0), crates: [co(4, 1)], grid: walls([4, 3]) }));
+  const r = replay(w, ['W', 'W', 'W', 'R']);
+  assert.equal(r.states[4]?.pos, at(4, 2));
+  assert.deepEqual(r.states[4]?.crates, [at(4, 1)]);
+});
+
+test('magnets pull the drone', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['MAGNETISM', 'MIRROR_DRONE'], ...far, start: co(6, 6), droneStart: co(3, 1), magnets: [co(3, 4)], grid: walls([3, 4]) }));
+  const r = step(w, initialState(w), 'W');
+  assert.ok(r.ok);
+  assert.equal(r.state.drone, at(3, 2));
+});
+
+test('gravity pulls the drone', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['GRAVITY', 'MIRROR_DRONE'], ...far, start: co(6, 6), droneStart: co(2, 2) }));
+  const r = step(w, initialState(w), 'W');
+  assert.ok(r.ok);
+  assert.equal(r.state.drone, at(3, 2));
+});
+
+test('belts carry the drone and it slides on ice', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CONVEYOR', 'MIRROR_DRONE'], ...far, start: co(6, 3), droneStart: co(2, 3), conveyors: [{ r: 2, c: 2, dir: 'D' }] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.drone, at(3, 2));
+  const w2 = compileWorld(makePuzzle({ mutations: ['CRYO_SLICK', 'MIRROR_DRONE'], ...far, start: co(6, 3), droneStart: co(2, 3), ice: [co(2, 2), co(2, 1)] }));
+  const r2 = step(w2, initialState(w2), 'R');
+  assert.ok(r2.ok);
+  assert.equal(r2.state.drone, at(2, 0));
+});
+
+test('blight cannot grow into water', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['FLOOD', 'INFECTION'], ...far, start: co(6, 6), flood: { edge: 'U' }, blight: [co(1, 3)], blightOrder: ['U', 'D', 'L', 'R'] }));
+  const r = replay(w, ['W', 'W', 'W', 'W']);
+  // Move 2: row A is still dry, so blight climbs into it. Move 4: row A is water.
+  assert.equal(r.states[2]?.blight[at(0, 3)], 1);
+  assert.equal(r.states[4]?.blight[at(0, 2)], 0);
+  assert.equal(r.states[4]?.blight[at(2, 3)], 1);
+});

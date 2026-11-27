@@ -84,7 +84,8 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
   if (t.vent) out.push(`Vent, ${t.vent.live ? 'blowing this move' : 'off this move'}. Pushes you 1 tile ${DIR_WORD[t.vent.dir]} on odd moves.`);
   if (t.phase) out.push(`Layer ${t.phase.layer + 1} block, ${t.phase.solid ? 'solid right now' : 'open right now'}.`);
   if (t.rotor) out.push(`Rotor. Twists your next move ${t.rotor > 0 ? 'clockwise' : 'anticlockwise'}.`);
-  if (t.pit) out.push('Pit. Nothing can enter it.');
+  if (t.pit) out.push(w.has.CRATES ? 'Pit. Nothing can enter it, but a pushed crate will fill it.' : 'Pit. Nothing can enter it.');
+  if (t.filled) out.push('A crate filled this pit. It is solid floor now.');
   else if (t.fragile) out.push('Cracked floor. It falls in once you step off it.');
   if (t.blight) out.push('Blight. Cannot be entered, and it spreads.');
   if (t.blightNext !== null) out.push(`Blight grows here in ${t.blightNext} ${t.blightNext === 1 ? 'move' : 'moves'} unless something is standing on it.`);
@@ -116,6 +117,7 @@ type TileView = {
   portal: { label: number; group: number; partner: number } | null;
   fragile: boolean;
   pit: boolean;
+  filled: boolean;
   blight: boolean;
   blightNext: number | null;
   after: boolean;
@@ -153,7 +155,8 @@ function buildTiles(w: World, s: GameState): TileView[] {
       phase: (L.phase[i] as number) >= 0 ? { layer: L.phase[i] as number, solid: L.phase[i] === layer } : null,
       rotor: L.rotor[i] as number,
       portal: label >= 0 ? { label, group: mode === 0 ? (label < 2 ? 0 : 1) : label % 2 === 0 ? 0 : 1, partner: portalPartner(label, mode) } : null,
-      fragile: w.fragile[i] === 1 && s.decay[i] !== 0,
+      fragile: w.fragile[i] === 1 && s.decay[i] !== 0 && s.decay[i] !== -2,
+      filled: s.decay[i] === -2,
       pit: s.decay[i] === 0,
       blight: s.blight[i] === 1,
       blightNext: bl && bl.target === i ? bl.inMoves : null,
@@ -212,6 +215,12 @@ function Tile({ t }: { t: TileView }) {
 
       {t.fragile && !t.pit && <path d="M50 14l-6 18 10 10-8 14 4 24M44 32l-17 5M54 42l19-6" className="crack" />}
       {t.pit && <path d="M26 54l10-12 8 6 9-14 10 10 11-4" className="pit-edge" />}
+      {t.filled && (
+        <g className="filled">
+          <rect x="22" y="22" width="56" height="56" rx="4" />
+          <path d="M22 41h56M22 59h56" />
+        </g>
+      )}
 
       {t.ice && <path d="M30 34l12-12M56 70l14-14M60 32l6-6" className="ice-glint" />}
 

@@ -151,7 +151,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     ink: '#F06EAA',
     darkText: true,
     short: 'A drone copies your moves in reverse. It is solid.',
-    rule: 'Every time you move, the drone moves 1 tile in the opposite direction (it holds when you hold). It blocks you, the blight and decay, and it presses plates.',
+    rule: 'Every time you move, the drone moves 1 tile in the opposite direction (it holds when you hold). It is a real robot: belts carry it, it slides on ice, and magnets and gravity pull it 1 tile, just like you. It is solid, blocks blight and presses plates.',
     tip: 'Park the drone in a doorway, or use it as a wall to stop a slide.',
     timed: false
   },
@@ -161,7 +161,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     ink: '#5FA83A',
     darkText: true,
     short: 'Every 4th move you can step through one wall.',
-    rule: 'On moves 4, 8, 12… walking into a single wall carries you through it, if the tile behind is open.',
+    rule: 'On moves 4, 8, 12… walking into a single wall (or crate) carries you through it, if the tile behind is open.',
     tip: 'Shortcuts open on a schedule. Count your moves.',
     timed: true
   },
@@ -303,7 +303,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     ink: '#2E86DE',
     darkText: false,
     short: 'Water rises from one edge every 3 moves, up to 2 lines deep.',
-    rule: 'After moves 3 and 6, water covers one more line from its edge (2 lines at most). Flooded tiles cannot be entered. The next line to flood is marked.',
+    rule: 'After moves 3 and 6, water covers one more line from its edge (2 lines at most). Flooded tiles cannot be entered, and blight cannot grow into water. The next line to flood is marked.',
     tip: 'Clear the low ground before the second wave.',
     timed: true
   },
@@ -352,8 +352,8 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     name: 'Crates',
     ink: '#A0652B',
     darkText: false,
-    short: 'Walk into a crate to push it one tile. You can never pull it.',
-    rule: 'Walking into a crate pushes it one tile if the tile beyond is plain floor, a plate, ice or cracked floor. Forces like gravity and belts cannot push crates, and crates block everything. A crate on a plate presses it.',
+    short: 'Walk into a crate to push it. You can never pull it.',
+    rule: 'Walking into a crate pushes it one tile. Once moving, a crate slides on ice, rides belts and warps through portals. Pushed into a pit, it fills the pit and becomes floor. Gravity and magnets do not move crates, and crates block everything else. A crate on a plate presses it.',
     tip: 'Before every push, check you can still get behind the crate later.',
     timed: false
   }

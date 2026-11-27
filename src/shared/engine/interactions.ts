@@ -31,7 +31,18 @@ const NOTES: Record<string, string> = {
   'BLAST_DOORS+CRATES': 'Push a crate onto a plate to press it, and a crate in a doorway keeps that door from closing.',
   'CRATES+GRAVITY': 'Gravity cannot move crates, so a crate makes a solid floor to land on.',
   'CRATES+SKITTISH_CELLS': 'Crates block a fleeing cell. Use them to build a corner.',
-  'CRATES+INFECTION': 'Blight cannot grow onto a crate.'
+  'CRATES+INFECTION': 'Blight cannot grow onto a crate.',
+  'CRATES+CRYO_SLICK': 'A crate pushed onto ice slides until something stops it.',
+  'CONVEYOR+CRATES': 'Push a crate onto a belt and the belt carries it along.',
+  'CRATES+PORTALS': 'A crate pushed onto a pad warps to its partner, if the partner pad is free.',
+  'CRATES+DECAY': 'Push a crate into a pit to fill it. The pit becomes solid floor for good.',
+  'CRATES+PHASE_SHIFT': 'On a phase move you can step straight through a crate.',
+  'MAGNETISM+MIRROR_DRONE': 'Magnets pull the drone too. It is made of metal.',
+  'GRAVITY+MIRROR_DRONE': 'Gravity pulls the drone 1 tile after it moves.',
+  'CONVEYOR+MIRROR_DRONE': 'Belts carry the drone.',
+  'CRYO_SLICK+MIRROR_DRONE': 'The drone slides on ice too.',
+  'FLOOD+INFECTION': 'Blight cannot grow into water.',
+  'CRATES+TURNTABLES': 'A crate on a gear’s ring rides it round.'
 };
 
 export function interactionNotes(muts: readonly MutationId[]): { pair: [MutationId, MutationId]; text: string }[] {

@@ -183,25 +183,114 @@ function courierEnter(ctx: Ctx, to: number, ev: StepEvent): void {
   pressPlate(ctx, to);
 }
 
-/** Crates move onto plain ground, plates, ice or cracked floor; never onto objectives. */
+/** Whether a crate can be moved into `to` (a pit counts: the crate fills it). */
+function crateCanEnter(ctx: Ctx, to: number, d: Dir): boolean {
+  const w = ctx.w;
+  const L = ctx.L;
+  if (to < 0 || ctx.crates.includes(to)) return false;
+  if (to === w.exit || ctx.cells.includes(to) || to === ctx.pos || to === ctx.echo || to === ctx.drone) return false;
+  if ((L.vent[to] as number) >= 0 || L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
+  if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
+  if (ctx.decay[to] === 0) return true;
+  return !blocked(ctx, to, d, 'echo');
+}
+
+function moveCrate(ctx: Ctx, from: number, to: number): 'moved' | 'filled' {
+  ctx.crates = ctx.crates.filter((c) => c !== from);
+  ctx.events.push({ t: 'crate', from, to });
+  if (ctx.decay[to] === 0) {
+    // The crate drops into the pit and turns it into solid floor.
+    ctx.decay[to] = -2;
+    ctx.events.push({ t: 'fill', at: to });
+    return 'filled';
+  }
+  ctx.crates = [...ctx.crates, to].sort((a, b) => a - b);
+  pressPlate(ctx, to);
+  return 'moved';
+}
+
+/**
+ * Walking into a crate pushes it one tile. A pushed crate then behaves like
+ * any object: it slides on ice, rides belts and warps through portals.
+ */
 function pushCrate(ctx: Ctx, at: number, d: Dir): boolean {
   const w = ctx.w;
   const L = ctx.L;
-  const to = nb(w, at, d);
-  if (to < 0 || ctx.crates.includes(to)) return false;
-  if (to === w.exit || ctx.cells.includes(to) || to === ctx.pos) return false;
-  if ((w.portalAt[to] as number) >= 0 || (L.conv[to] as number) >= 0 || (L.vent[to] as number) >= 0) return false;
-  if (L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
-  if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
-  // Temporarily lift the crate so it does not block itself.
-  ctx.crates = ctx.crates.filter((c) => c !== at);
-  if (blocked(ctx, to, d, 'echo') || to === ctx.echo) {
-    ctx.crates = [...ctx.crates, at].sort((a, b) => a - b);
-    return false;
+  const first = nb(w, at, d);
+  if (!crateCanEnter(ctx, first, d)) return false;
+  if (moveCrate(ctx, at, first) === 'filled') return true;
+  let cur = first;
+  let travel: Dir = d;
+  let warped = false;
+  const beltsUsed = new Set<number>();
+  for (let iter = 0; iter < 24; iter++) {
+    if (w.has.PORTALS && !warped && (w.portalAt[cur] as number) >= 0) {
+      const dest = w.portalPos[portalPartner(w.portalAt[cur] as number, portalMode(ctx.turn))] as number;
+      warped = true;
+      if (dest >= 0 && crateCanEnter(ctx, dest, travel) && ctx.decay[dest] !== 0) {
+        moveCrate(ctx, cur, dest);
+        cur = dest;
+        continue;
+      }
+    }
+    const cv = L.conv[cur] as number;
+    if (w.has.CONVEYOR && cv >= 0 && !beltsUsed.has(cur)) {
+      beltsUsed.add(cur);
+      const bd = DIRS[cv] as Dir;
+      const nxt = nb(w, cur, bd);
+      if (crateCanEnter(ctx, nxt, bd)) {
+        if (moveCrate(ctx, cur, nxt) === 'filled') return true;
+        cur = nxt;
+        travel = bd;
+        continue;
+      }
+    }
+    if (w.has.CRYO_SLICK && L.ice[cur]) {
+      const nxt = nb(w, cur, travel);
+      if (crateCanEnter(ctx, nxt, travel)) {
+        if (moveCrate(ctx, cur, nxt) === 'filled') return true;
+        cur = nxt;
+        continue;
+      }
+    }
+    break;
   }
-  ctx.crates = [...ctx.crates, to].sort((a, b) => a - b);
-  ctx.events.push({ t: 'crate', from: at, to });
-  pressPlate(ctx, to);
+  return true;
+}
+
+/** The drone is a physical robot: belts and ice move it after it arrives. */
+function droneSettle(ctx: Ctx, travelIn: Dir): void {
+  const w = ctx.w;
+  const L = ctx.L;
+  let travel = travelIn;
+  const beltsUsed = new Set<number>();
+  for (let iter = 0; iter < 24 && ctx.drone >= 0; iter++) {
+    const p = ctx.drone;
+    const cv = L.conv[p] as number;
+    let d: Dir | null = null;
+    if (w.has.CONVEYOR && cv >= 0 && !beltsUsed.has(p)) {
+      beltsUsed.add(p);
+      d = DIRS[cv] as Dir;
+    } else if (w.has.CRYO_SLICK && L.ice[p]) {
+      d = travel;
+    }
+    if (!d) break;
+    const nxt = nb(w, p, d);
+    if (blocked(ctx, nxt, d, 'drone')) break;
+    ctx.events.push({ t: 'drone', from: p, to: nxt });
+    ctx.drone = nxt;
+    travel = d;
+    pressPlate(ctx, nxt);
+  }
+}
+
+function droneStep(ctx: Ctx, d: Dir): boolean {
+  const tgt = nb(ctx.w, ctx.drone, d);
+  if (blocked(ctx, tgt, d, 'drone')) return false;
+  ctx.events.push({ t: 'drone', from: ctx.drone, to: tgt });
+  ctx.drone = tgt;
+  pressPlate(ctx, tgt);
+  droneSettle(ctx, d);
   return true;
 }
 
@@ -328,8 +417,8 @@ function chargedCells(ctx: Ctx): Dir | null {
   return movedDir;
 }
 
-function magnetPull(ctx: Ctx): Dir | null {
-  const p = ctx.pos;
+/** The direction a magnet would pull something standing at p, or null. */
+function magnetDir(ctx: Ctx, p: number, who: Mover): Dir | null {
   for (const mag of ctx.w.magnets) {
     let d: Dir | null = null;
     if (rowOf(p) === rowOf(mag) && p !== mag) d = colOf(mag) > colOf(p) ? 'R' : 'L';
@@ -337,18 +426,26 @@ function magnetPull(ctx: Ctx): Dir | null {
     if (!d) continue;
     let clear = true;
     for (let t = stepIdx(p, d); t >= 0 && t !== mag; t = stepIdx(t, d)) {
-      if (blocked(ctx, t, d, 'courier')) {
+      if (blocked(ctx, t, d, who)) {
         clear = false;
         break;
       }
     }
     if (!clear) continue;
     const nxt = stepIdx(p, d);
-    if (nxt === mag || blocked(ctx, nxt, d, 'courier')) continue;
-    courierEnter(ctx, nxt, { t: 'magnet', from: p, to: nxt });
+    if (nxt === mag || blocked(ctx, nxt, d, who)) continue;
     return d;
   }
   return null;
+}
+
+function magnetPull(ctx: Ctx): Dir | null {
+  const p = ctx.pos;
+  const d = magnetDir(ctx, p, 'courier');
+  if (!d) return null;
+  const nxt = stepIdx(p, d);
+  courierEnter(ctx, nxt, { t: 'magnet', from: p, to: nxt });
+  return d;
 }
 
 export function step(w: World, s: GameState, action: Action): StepResult {
@@ -405,7 +502,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       const nxt = nb(w, from, moveDir);
       if (nxt < 0) break;
       if (w.tether >= 0 && chebyshev(from, w.tether) <= 2 && chebyshev(nxt, w.tether) > 2) break;
-      if (L.wall[nxt] && phaseNow && k === 0) {
+      if ((L.wall[nxt] || ctx.crates.includes(nxt)) && phaseNow && k === 0) {
         const beyond = nb(w, nxt, moveDir);
         const leash = w.tether >= 0 && beyond >= 0 && chebyshev(from, w.tether) <= 2 && chebyshev(beyond, w.tether) > 2;
         if (beyond >= 0 && !leash && !blocked(ctx, beyond, moveDir, 'courier')) {
@@ -435,13 +532,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     }
   }
   if (w.has.MIRROR_DRONE && ctx.drone >= 0 && moveDir) {
-    const d = opposite(moveDir);
-    const tgt = nb(w, ctx.drone, d);
-    if (!blocked(ctx, tgt, d, 'drone')) {
-      ctx.events.push({ t: 'drone', from: ctx.drone, to: tgt });
-      ctx.drone = tgt;
-      pressPlate(ctx, tgt);
-    }
+    droneStep(ctx, opposite(moveDir));
   }
 
   // 3. Tile effects on the tile you walked into.
@@ -456,6 +547,10 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     const d = magnetPull(ctx);
     if (d) resolveTileEffects(ctx, d);
   }
+  if (w.has.MAGNETISM && w.has.MIRROR_DRONE && ctx.drone >= 0) {
+    const d = magnetDir(ctx, ctx.drone, 'drone');
+    if (d) droneStep(ctx, d);
+  }
 
   // 5. Gravity.
   if (w.has.GRAVITY) {
@@ -468,6 +563,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       courierEnter(ctx, tgt, { t: 'gravity', from: ctx.pos, to: tgt });
       resolveTileEffects(ctx, gd);
     }
+    if (w.has.MIRROR_DRONE && ctx.drone >= 0) droneStep(ctx, gd);
   }
 
   // 6. Tether snap-back.
@@ -662,6 +758,7 @@ export function blightTarget(
       const cand = stepIdx(src, d);
       if (cand < 0 || blight[cand]) continue;
       if (cand === pos || cand === drone || cand === echo || cand === after || crates.includes(cand)) continue;
+      if (w.has.FLOOD && isFloodedAt(w, spreadTurn, cand)) continue;
       if (decay[cand] === 0) continue;
       const g = L.gate[cand] as number;
       if (w.has.PHASE_GATES && g >= 0 && g === closed) continue;
@@ -716,7 +813,7 @@ export function stateKey(w: World, s: GameState): string {
     const d = s.decay;
     for (let i = 0; i < CELLS; i++) {
       const v = d[i] as number;
-      if (v >= 0) k += String.fromCharCode(48 + i, 48 + v);
+      if (v >= 0 || v === -2) k += String.fromCharCode(48 + i, 48 + v);
     }
   }
   if (w.has.INFECTION) {

@@ -2082,3 +2082,13 @@ button.cat {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.filled rect {
+  fill: #c98c4e;
+  stroke: #6b3f17;
+  stroke-width: 4;
+}
+.filled path {
+  stroke: #8a5523;
+  stroke-width: 3;
+}

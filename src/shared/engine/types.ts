@@ -121,7 +121,7 @@ export type GameState = {
   cells: number[];
   /** Crate positions, sorted (Crates). */
   crates: number[];
-  /** -1 untouched, 0 collapsed pit, >0 turns until collapse. */
+  /** -1 untouched, -2 pit filled by a crate, 0 collapsed pit, >0 turns until collapse. */
   decay: Int8Array;
   /** 1 = infected by blight. */
   blight: Uint8Array;
@@ -151,6 +151,7 @@ export type StepEvent =
   | { t: 'orbit'; index: number; from: number; to: number }
   | { t: 'flee'; index: number; from: number; to: number }
   | { t: 'crate'; from: number; to: number }
+  | { t: 'fill'; at: number }
   | { t: 'wrap'; from: number; to: number }
   | { t: 'after'; at: number }
   | { t: 'collapse'; at: number }
