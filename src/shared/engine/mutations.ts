@@ -333,7 +333,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     ink: '#3FA34D',
     darkText: false,
     short: 'Walk off one edge and you come back in on the opposite edge.',
-    rule: 'The board wraps: anything that moves off an edge (you, the drone, the echo, belt pushes, slides, gravity) reappears on the opposite edge. Magnets and beams still stop at the edges.',
+    rule: 'The board wraps: anything that moves off an edge (you, the drone, the echo, fleeing cells, belt pushes, slides, gravity) reappears on the opposite edge, and charged cells reach across too. Magnets, beams and blight still stop at the edges.',
     tip: 'The far side of the board is often one step away.',
     timed: false
   },

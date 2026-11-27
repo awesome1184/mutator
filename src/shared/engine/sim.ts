@@ -11,7 +11,7 @@
 //   7. World: orbits, afterimage, decay, blight, turntables
 //   8. Win check: both cells collected and standing on the exit
 
-import { CELLS, chebyshev, colOf, dirBetween, DIRS, manhattan, opposite, rotateDir, rowOf, spinAround, stepIdx, wrapIdx } from './grid.ts';
+import { CELLS, chebyshev, colOf, delta, DIRS, manhattan, opposite, rotateDir, rowOf, spinAround, stepIdx, wrapIdx } from './grid.ts';
 import type { Action, Dir, GameState, StepEvent, StepResult } from './types.ts';
 import {
   activePhaseLayer,
@@ -296,11 +296,13 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
 
 function chargedCells(ctx: Ctx): Dir | null {
   const w = ctx.w;
+  const wrap = w.has.WRAPAROUND === true;
   let movedDir: Dir | null = null;
   if (!(ctx.got & 1)) {
     const c0 = cellAt(w, ctx, 0);
-    const away = dirBetween(c0, ctx.pos);
-    if (away) {
+    const { dr, dc } = delta(c0, ctx.pos, wrap);
+    if (Math.abs(dr) + Math.abs(dc) === 1) {
+      const away: Dir = dr === -1 ? 'U' : dr === 1 ? 'D' : dc === -1 ? 'L' : 'R';
       const tgt = nb(w, ctx.pos, away);
       if (!blocked(ctx, tgt, away, 'courier')) {
         courierEnter(ctx, tgt, { t: 'repel', from: ctx.pos, to: tgt });
@@ -311,12 +313,10 @@ function chargedCells(ctx: Ctx): Dir | null {
   if (!(ctx.got & 2)) {
     const c1 = cellAt(w, ctx, 1);
     const p = ctx.pos;
+    const { dr, dc } = delta(p, c1, wrap);
     let pull: Dir | null = null;
-    if (rowOf(p) === rowOf(c1) && p !== c1 && Math.abs(colOf(p) - colOf(c1)) <= 2) {
-      pull = colOf(c1) > colOf(p) ? 'R' : 'L';
-    } else if (colOf(p) === colOf(c1) && p !== c1 && Math.abs(rowOf(p) - rowOf(c1)) <= 2) {
-      pull = rowOf(c1) > rowOf(p) ? 'D' : 'U';
-    }
+    if (dr === 0 && dc !== 0 && Math.abs(dc) <= 2) pull = dc > 0 ? 'R' : 'L';
+    else if (dc === 0 && dr !== 0 && Math.abs(dr) <= 2) pull = dr > 0 ? 'D' : 'U';
     if (pull) {
       const tgt = nb(w, p, pull);
       if (!blocked(ctx, tgt, pull, 'courier')) {
@@ -544,6 +544,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       ctx.echo = spinAround(hub, ctx.echo);
       after = spinAround(hub, after);
       if (ctx.crates.length) ctx.crates = ctx.crates.map((c) => spinAround(hub, c)).sort((a, b) => a - b);
+      if (w.has.SKITTISH_CELLS) ctx.cells = ctx.cells.map((c) => spinAround(hub, c));
       const ring = [stepIdx(hub, 'U'), stepIdx(hub, 'R'), stepIdx(hub, 'D'), stepIdx(hub, 'L')];
       if (w.has.DECAY) {
         const vals = ring.map((p) => ctx.decay[p] as number);
@@ -605,9 +606,8 @@ function fleeCells(ctx: Ctx, you: number): void {
   for (let k = 0; k < 2; k++) {
     if (ctx.got & (1 << k)) continue;
     const c = ctx.cells[k] as number;
-    if (manhattan(c, you) > 2) continue;
-    const dr = rowOf(c) - rowOf(you);
-    const dc = colOf(c) - colOf(you);
+    const { dr, dc } = delta(you, c, w.has.WRAPAROUND === true);
+    if (Math.abs(dr) + Math.abs(dc) > 2) continue;
     const vert: Dir | null = dr > 0 ? 'D' : dr < 0 ? 'U' : null;
     const horiz: Dir | null = dc > 0 ? 'R' : dc < 0 ? 'L' : null;
     const order = (Math.abs(dr) >= Math.abs(dc) ? [vert, horiz] : [horiz, vert]).filter((d): d is Dir => d !== null);

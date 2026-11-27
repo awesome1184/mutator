@@ -2,6 +2,7 @@ import { ALL_MUTATIONS, MUTATIONS } from '../../shared/engine/mutations.ts';
 import type { MutationId, Puzzle } from '../../shared/engine/types.ts';
 import { DIR_ARROW } from '../../shared/engine/grid.ts';
 import { MutationGlyph } from './icons.tsx';
+import { interactionNotes } from '../../shared/engine/interactions.ts';
 
 export function MutationCard({ id, puzzle }: { id: MutationId; puzzle?: Puzzle }) {
   const m = MUTATIONS[id];
@@ -42,6 +43,22 @@ export function Rules({ puzzle, seen }: { puzzle: Puzzle; seen: MutationId[] }) 
           <MutationCard key={id} id={id} puzzle={puzzle} />
         ))}
       </div>
+
+      {interactionNotes(puzzle.mutations).length > 0 && (
+        <>
+          <h3 className="rules-sub">How they combine</h3>
+          <ul className="plain-list combos">
+            {interactionNotes(puzzle.mutations).map((n) => (
+              <li key={n.pair.join('+')}>
+                <strong>
+                  {MUTATIONS[n.pair[0]].name} × {MUTATIONS[n.pair[1]].name}.
+                </strong>{' '}
+                {n.text}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h3 className="rules-sub">Order of a move</h3>
       <ol className="turn-order">

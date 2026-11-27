@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent } from 'react';
-import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, manhattan } from '../../shared/engine/grid.ts';
+import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, delta } from '../../shared/engine/grid.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import { nextBlight, courierWaypoints, type Preview } from '../../shared/engine/forecast.ts';
 import { cellAt, massTier } from '../../shared/engine/sim.ts';
@@ -25,6 +25,11 @@ const PORTAL_LABEL = 'ABCD';
 const ROT: Record<Dir, number> = { U: 0, R: 90, D: 180, L: 270 };
 const DIR_WORD: Record<Dir, string> = { U: 'up', R: 'right', D: 'down', L: 'left' };
 
+function wrapDist(w: World, a: number, b: number): number {
+  const { dr, dc } = delta(a, b, w.has.WRAPAROUND === true);
+  return Math.abs(dr) + Math.abs(dc);
+}
+
 /** Plain-language description of everything on one tile. */
 function describeTile(w: World, s: GameState, tiles: TileView[], i: number): string {
   const t = tiles[i];
@@ -44,7 +49,7 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
             : 'Cell (−). Pulls you in from up to 2 tiles away.'
           : 'Energy cell. Walk onto it to pick it up.'
       );
-    } else if (w.has.SKITTISH_CELLS && manhattan(cellAt(w, s, k), i) <= 2) {
+    } else if (w.has.SKITTISH_CELLS && wrapDist(w, cellAt(w, s, k), i) <= 2) {
       out.push('Inside a skittish cell’s zone. End a move here and the cell runs.');
     } else if (w.has.ORBITAL_CELLS && !w.has.SKITTISH_CELLS && cellPosAt(w, k, s.turn + 1) === i) {
       out.push('An orbiting cell moves here after your next move.');
@@ -460,7 +465,7 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
     const L0 = layerFor(world, state.turn);
     for (const c of cells) {
       if (c.got) continue;
-      for (let i = 0; i < CELLS; i++) if (i !== c.at && manhattan(i, c.at) <= 2 && !L0.wall[i]) fearZones.push(i);
+      for (let i = 0; i < CELLS; i++) if (i !== c.at && wrapDist(world, i, c.at) <= 2 && !L0.wall[i]) fearZones.push(i);
     }
   }
   const beam = beamLine(world, state.turn);

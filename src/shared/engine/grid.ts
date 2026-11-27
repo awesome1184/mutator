@@ -55,6 +55,19 @@ export function wrapIdx(i: number, d: Dir): number {
   return idx(r, c);
 }
 
+/** Signed row/column offset from a to b, taking the shorter way round when wrapping. */
+export function delta(a: number, b: number, wrap: boolean): { dr: number; dc: number } {
+  let dr = rowOf(b) - rowOf(a);
+  let dc = colOf(b) - colOf(a);
+  if (wrap) {
+    if (dr > N / 2) dr -= N;
+    if (dr < -N / 2) dr += N;
+    if (dc > N / 2) dc -= N;
+    if (dc < -N / 2) dc += N;
+  }
+  return { dr, dc };
+}
+
 export function rotateDir(d: Dir, quarterTurns: number): Dir {
   const k = DIRS.indexOf(d);
   return DIRS[(((k + quarterTurns) % 4) + 4) % 4] as Dir;
