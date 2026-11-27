@@ -437,14 +437,14 @@ p {
 
 /* tile art */
 .well {
-  fill: var(--well);
+  fill: #e9ecf7;
 }
 .well.ice {
   fill: #cdeff8;
 }
 .well-rim {
   fill: none;
-  stroke: var(--well-rim);
+  stroke: #d6dbee;
   stroke-width: 5;
   stroke-linecap: round;
 }
@@ -481,10 +481,13 @@ p {
   stroke-width: 4;
   stroke-dasharray: 5 6;
 }
-svg .plate {
-  fill: #dde3cf;
+.pplate circle {
+  fill: #c9d3b4;
   stroke: #56663f;
-  stroke-width: 4;
+  stroke-width: 5;
+}
+.pplate circle + circle {
+  fill: #56663f;
 }
 .crack {
   fill: none;
@@ -604,25 +607,37 @@ svg .plate {
 .phase.solid text {
   fill: #fff;
 }
-.exit rect {
+.door-frame {
   fill: #fff;
   stroke: var(--ink);
   stroke-width: 6;
-}
-.exit path {
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 6;
-  stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.35;
 }
-.exit.open rect {
+.exit.open .door-frame {
   fill: var(--ink);
 }
-.exit.open path {
+.door-arrow {
+  fill: none;
   stroke: #fff;
-  opacity: 1;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.door-lock path {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 5;
+}
+.door-lock rect {
+  fill: var(--ink-soft);
+}
+.exit-label {
+  fill: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 800;
+  font-stretch: 80%;
+  letter-spacing: 0.04em;
 }
 .start-mark {
   stroke: var(--well-rim);
@@ -683,7 +698,7 @@ svg .plate {
 }
 .peek-path {
   fill: none;
-  stroke: var(--courier);
+  stroke: var(--bench);
   stroke-width: 8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -691,19 +706,24 @@ svg .plate {
 }
 
 /* entities */
-.capsule {
+.battery {
   fill: var(--cell);
   stroke: var(--cell-edge);
-  stroke-width: 4;
+  stroke-width: 5;
 }
-.capsule-seam {
+.battery-nub {
+  fill: var(--cell-edge);
+}
+.battery-bolt {
+  fill: #fff;
   stroke: var(--cell-edge);
   stroke-width: 3;
+  stroke-linejoin: round;
 }
-.capsule-label {
+.battery-sign {
   fill: #3b2a00;
-  font-size: 21px;
-  font-weight: 800;
+  font-size: 40px;
+  font-weight: 900;
   font-family: var(--font);
 }
 .cell-ghost rect {
@@ -740,20 +760,27 @@ svg .plate {
   stroke-linejoin: round;
 }
 .landing circle {
-  fill: rgba(255, 90, 31, 0.08);
-  stroke: var(--courier);
+  fill: rgba(61, 69, 194, 0.08);
+  stroke: var(--bench);
   stroke-width: 4;
+  stroke-dasharray: 6 5;
 }
 .landing path {
   fill: none;
-  stroke: var(--courier);
-  stroke-width: 5;
+  stroke: var(--bench);
+  stroke-width: 6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .landing.focus circle {
-  fill: rgba(255, 90, 31, 0.3);
+  fill: rgba(61, 69, 194, 0.22);
+  stroke-dasharray: none;
   stroke-width: 6;
+}
+.courier-halo {
+  fill: #fff;
+  stroke: var(--courier);
+  stroke-width: 5;
 }
 .courier-body {
   fill: var(--courier);
@@ -763,11 +790,19 @@ svg .plate {
 .pupil {
   fill: var(--ink);
 }
-.courier-shine {
+.courier-mouth {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.55);
+  stroke: var(--ink);
   stroke-width: 4;
   stroke-linecap: round;
+}
+.courier {
+  animation: bob 1.6s ease-in-out infinite;
+}
+@keyframes bob {
+  50% {
+    filter: drop-shadow(0 0 6px rgba(255, 90, 31, 0.65));
+  }
 }
 
 /* ---------------------------------------------------------------- side panel */
@@ -1950,4 +1985,19 @@ button.cat {
   border: 0;
   cursor: pointer;
   opacity: 0.85;
+}
+
+.info {
+  background: var(--plate);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  min-height: 2.9em;
+  box-shadow: 0 3px 0 var(--bench-deep);
+}
+
+.info.idle {
+  color: var(--ink-soft);
 }

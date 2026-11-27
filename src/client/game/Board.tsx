@@ -12,6 +12,7 @@ import {
   isFloodedAt,
   layerFor,
   portalMode,
+  portalPartner,
   ventsActive,
   type World
 } from '../../shared/engine/world.ts';
@@ -21,6 +22,69 @@ const GATE_INK = ['#E8579B', '#1F6FD1'];
 const PORTAL_INK = ['#14A3C7', '#E07A10'];
 const PORTAL_LABEL = 'ABCD';
 const ROT: Record<Dir, number> = { U: 0, R: 90, D: 180, L: 270 };
+const DIR_WORD: Record<Dir, string> = { U: 'up', R: 'right', D: 'down', L: 'left' };
+
+/** Plain-language description of everything on one tile. */
+function describeTile(w: World, s: GameState, tiles: TileView[], i: number): string {
+  const t = tiles[i];
+  if (!t) return '';
+  const out: string[] = [];
+  const where = `${ROWS[rowOf(i)]}${colOf(i) + 1}`;
+  if (s.pos === i) out.push('You. Grab both cells, then reach the exit.');
+  for (const k of [0, 1]) {
+    if (s.got & (1 << k)) continue;
+    if (cellPosAt(w, k, s.turn) === i) {
+      out.push(
+        w.has.MAGNETIC_CELLS
+          ? k === 0
+            ? 'Cell (+). Pushes you away if you stop next to it.'
+            : 'Cell (−). Pulls you in from up to 2 tiles away.'
+          : 'Energy cell. Walk onto it to pick it up.'
+      );
+    } else if (w.has.ORBITAL_CELLS && cellPosAt(w, k, s.turn + 1) === i) {
+      out.push('An orbiting cell moves here after your next move.');
+    }
+  }
+  if (s.drone === i) out.push('Mirror drone. Moves the opposite way to you. Solid.');
+  if (s.echo === i) out.push('Echo. Repeats your previous move one move later. Solid.');
+  if (t.exit) out.push(t.exit.open ? 'Exit, open. Step on it to finish.' : 'Exit, locked. It opens once you have both cells.');
+  if (t.wall) {
+    out.push(
+      t.wallGlyph === 'magnet'
+        ? 'Magnet. Pulls you 1 tile when you are in a clear line with it.'
+        : t.wallGlyph === 'hub'
+          ? 'Gear. The 4 tiles touching it rotate clockwise every 3 moves.'
+          : t.wallGlyph === 'pylon'
+            ? 'Tether pylon. You cannot walk out of the dashed zone around it.'
+            : 'Wall.'
+    );
+  }
+  if (t.conv) out.push(`Belt. Pushes you 1 tile ${DIR_WORD[t.conv]}.`);
+  if (t.ice) out.push('Ice. You keep sliding until something stops you.');
+  if (t.portal)
+    out.push(`Portal ${PORTAL_LABEL[t.portal.label]}. Right now it sends you to ${PORTAL_LABEL[t.portal.partner]} (same colour).`);
+  if (t.gate) out.push(`${t.gate.pol === 0 ? 'Pink' : 'Blue'} gate, ${t.gate.closed ? 'closed this move' : 'open this move'}. Pink and blue alternate.`);
+  if (t.door) out.push(t.door.open ? 'Blast door, open.' : 'Blast door, closed. Step on a plate to open it.');
+  if (t.plate) out.push('Plate. Stepping on it opens or closes every blast door.');
+  if (t.refl) out.push(`Prism. Turns you ${t.refl > 0 ? 'clockwise' : 'anticlockwise'} and carries you 1 tile.`);
+  if (t.oneway) out.push(`One-way gate. You can only enter it moving ${DIR_WORD[t.oneway]}.`);
+  if (t.vent) out.push(`Vent, ${t.vent.live ? 'blowing this move' : 'off this move'}. Pushes you 1 tile ${DIR_WORD[t.vent.dir]} on odd moves.`);
+  if (t.phase) out.push(`Layer ${t.phase.layer + 1} block, ${t.phase.solid ? 'solid right now' : 'open right now'}.`);
+  if (t.rotor) out.push(`Rotor. Twists your next move ${t.rotor > 0 ? 'clockwise' : 'anticlockwise'}.`);
+  if (t.pit) out.push('Pit. Nothing can enter it.');
+  else if (t.fragile) out.push('Cracked floor. It falls in once you step off it.');
+  if (t.blight) out.push('Blight. Cannot be entered, and it spreads.');
+  if (t.blightNext !== null) out.push(`Blight grows here in ${t.blightNext} ${t.blightNext === 1 ? 'move' : 'moves'} unless something is standing on it.`);
+  if (t.after) out.push('Hard-light. Solid for this move.');
+  if (t.flooded) out.push('Flooded. Cannot be entered.');
+  else if (t.floodNext) out.push('Water reaches this line soon.');
+  const beam = beamLine(w, s.turn);
+  if (beam && (beam.axis === 'row' ? rowOf(i) === beam.index : colOf(i) === beam.index))
+    out.push(beam.live ? 'Pulse beam, live this move. Cannot be entered.' : 'Pulse beam line, off this move.');
+  if (t.start && s.pos !== i) out.push('Where you started.');
+  if (out.length === 0) out.push('Floor.');
+  return `${where}: ${out.join(' ')}`;
+}
 
 type TileView = {
   i: number;
@@ -36,7 +100,7 @@ type TileView = {
   vent: { dir: Dir; live: boolean } | null;
   phase: { layer: number; solid: boolean } | null;
   rotor: number;
-  portal: { label: number; group: number } | null;
+  portal: { label: number; group: number; partner: number } | null;
   fragile: boolean;
   pit: boolean;
   blight: boolean;
@@ -75,7 +139,7 @@ function buildTiles(w: World, s: GameState): TileView[] {
       vent: (L.vent[i] as number) >= 0 ? { dir: DIRS[L.vent[i] as number] as Dir, live: vLive } : null,
       phase: (L.phase[i] as number) >= 0 ? { layer: L.phase[i] as number, solid: L.phase[i] === layer } : null,
       rotor: L.rotor[i] as number,
-      portal: label >= 0 ? { label, group: mode === 0 ? (label < 2 ? 0 : 1) : label % 2 === 0 ? 0 : 1 } : null,
+      portal: label >= 0 ? { label, group: mode === 0 ? (label < 2 ? 0 : 1) : label % 2 === 0 ? 0 : 1, partner: portalPartner(label, mode) } : null,
       fragile: w.fragile[i] === 1 && s.decay[i] !== 0,
       pit: s.decay[i] === 0,
       blight: s.blight[i] === 1,
@@ -126,7 +190,12 @@ function Tile({ t }: { t: TileView }) {
       {t.flooded && <circle cx="50" cy="50" r="41" className="water" />}
       {t.floodNext && <path d="M14 50c9-7 18 7 27 0s18-7 27 0 18 7 23 2" className="water-next" />}
 
-      {t.plate && <rect x="24" y="24" width="52" height="52" rx="6" className="plate" />}
+      {t.plate && (
+        <g className="pplate">
+          <circle cx="50" cy="50" r="30" />
+          <circle cx="50" cy="50" r="18" />
+        </g>
+      )}
 
       {t.fragile && !t.pit && <path d="M50 14l-6 18 10 10-8 14 4 24M44 32l-17 5M54 42l19-6" className="crack" />}
       {t.pit && <path d="M26 54l10-12 8 6 9-14 10 10 11-4" className="pit-edge" />}
@@ -206,8 +275,18 @@ function Tile({ t }: { t: TileView }) {
 
       {t.exit && (
         <g className={t.exit.open ? 'exit open' : 'exit'}>
-          <rect x="22" y="22" width="56" height="56" rx="9" />
-          <path d="M50 36v26M39 52l11 11 11-11" />
+          <path d="M28 80V38a22 22 0 0144 0v42z" className="door-frame" />
+          {t.exit.open ? (
+            <path d="M50 44v22M40 56l10 10 10-10" className="door-arrow" />
+          ) : (
+            <g className="door-lock">
+              <path d="M43 52v-6a7 7 0 0114 0v6" />
+              <rect x="39" y="52" width="22" height="16" rx="3" />
+            </g>
+          )}
+          <text x="50" y="96" textAnchor="middle" className="exit-label">
+            EXIT
+          </text>
         </g>
       )}
 
@@ -240,16 +319,17 @@ function Tile({ t }: { t: TileView }) {
 }
 
 function Courier({ look }: { look: Dir | null }) {
-  const dx = look === 'R' ? 3 : look === 'L' ? -3 : 0;
-  const dy = look === 'D' ? 3 : look === 'U' ? -3 : 0;
+  const dx = look === 'R' ? 4 : look === 'L' ? -4 : 0;
+  const dy = look === 'D' ? 4 : look === 'U' ? -4 : 0;
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true">
-      <path d="M50 18c18 0 30 13 30 31 0 20-13 33-30 33S20 69 20 49c0-18 12-31 30-31z" className="courier-body" />
-      <ellipse cx={40 + dx} cy={46 + dy} rx="7" ry="8.5" fill="#fff" />
-      <ellipse cx={60 + dx} cy={46 + dy} rx="7" ry="8.5" fill="#fff" />
-      <circle cx={41 + dx * 1.6} cy={47 + dy * 1.6} r="3.6" className="pupil" />
-      <circle cx={61 + dx * 1.6} cy={47 + dy * 1.6} r="3.6" className="pupil" />
-      <path d="M33 26c6-5 12-6 17-6" className="courier-shine" />
+      <circle cx="50" cy="50" r="47" className="courier-halo" />
+      <path d="M50 12c22 0 36 16 36 37 0 24-15 39-36 39S14 73 14 49c0-21 14-37 36-37z" className="courier-body" />
+      <ellipse cx={38 + dx} cy={45 + dy} rx="9" ry="11" fill="#fff" />
+      <ellipse cx={62 + dx} cy={45 + dy} rx="9" ry="11" fill="#fff" />
+      <circle cx={39 + dx * 1.5} cy={46 + dy * 1.5} r="4.8" className="pupil" />
+      <circle cx={63 + dx * 1.5} cy={46 + dy * 1.5} r="4.8" className="pupil" />
+      <path d="M41 70q9 6 18 0" className="courier-mouth" />
     </svg>
   );
 }
@@ -272,9 +352,10 @@ type Props = {
   focus: Action | null;
   reducedMotion: boolean;
   onAction: (a: Action) => void;
+  onInspect: (text: string | null) => void;
 };
 
-export function Board({ world, state, events, tick, bumps, lastDir, previews, showLandings, focus, reducedMotion, onAction }: Props) {
+export function Board({ world, state, events, tick, bumps, lastDir, previews, showLandings, focus, reducedMotion, onAction, onInspect }: Props) {
   const tiles = useMemo(() => buildTiles(world, state), [world, state]);
   const [courierAt, setCourierAt] = useState(state.pos);
   const [warping, setWarping] = useState(false);
@@ -326,10 +407,21 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
   const echoNext = world.has.ECHO && state.echo >= 0 && state.last && state.last !== 'W' ? stepIdx(state.echo, state.last) : -1;
 
   // Swipe / tap input.
-  const start = useRef<{ x: number; y: number; id: number } | null>(null);
+  const start = useRef<{ x: number; y: number; id: number; t: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const tileAt = (x: number, y: number): number => {
+    const rect = boardRef.current?.getBoundingClientRect();
+    if (!rect) return -1;
+    const c = Math.floor(((x - rect.left) / rect.width) * N);
+    const r = Math.floor(((y - rect.top) / rect.height) * N);
+    return r < 0 || r >= N || c < 0 || c >= N ? -1 : r * N + c;
+  };
+  const inspect = (i: number): void => onInspect(i < 0 ? null : describeTile(world, state, tiles, i));
   const onDown = (e: RPointerEvent<HTMLDivElement>): void => {
-    start.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    start.current = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now() };
+  };
+  const onMove = (e: RPointerEvent<HTMLDivElement>): void => {
+    if (e.pointerType === 'mouse' && !start.current) inspect(tileAt(e.clientX, e.clientY));
   };
   const onUp = (e: RPointerEvent<HTMLDivElement>): void => {
     const s = start.current;
@@ -341,13 +433,12 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
       onAction(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : dy > 0 ? 'D' : 'U');
       return;
     }
-    const rect = boardRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const c = Math.floor(((e.clientX - rect.left) / rect.width) * N);
-    const r = Math.floor(((e.clientY - rect.top) / rect.height) * N);
-    if (r < 0 || r >= N || c < 0 || c >= N) return;
-    const d = dirBetween(state.pos, r * N + c);
-    if (d) onAction(d);
+    const i = tileAt(e.clientX, e.clientY);
+    if (i < 0) return;
+    const d = dirBetween(state.pos, i);
+    // A quick tap on a neighbouring tile moves; anything else explains the tile.
+    if (d && performance.now() - s.t < 350) onAction(d);
+    else inspect(i);
   };
 
   // Preview paths.
@@ -385,6 +476,8 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
         className="field"
         onPointerDown={onDown}
         onPointerUp={onUp}
+        onPointerMove={onMove}
+        onPointerLeave={() => onInspect(null)}
         onPointerCancel={() => (start.current = null)}
         role="img"
         aria-label={`Board. You are at ${ROWS[rowOf(state.pos)]}${colOf(state.pos) + 1}. Exit at ${ROWS[rowOf(world.exit)]}${colOf(world.exit) + 1}.`}
@@ -439,12 +532,14 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
           c.got ? null : (
             <div key={`cell${c.k}`} className="entity cell-entity" style={pct(c.at)}>
               <svg viewBox="0 0 100 100" aria-hidden="true">
-                <rect x="30" y="22" width="40" height="56" rx="20" className="capsule" />
-                <path d="M30 50h40" className="capsule-seam" />
-                {world.has.MAGNETIC_CELLS && (
-                  <text x="50" y="45" textAnchor="middle" className="capsule-label">
+                <rect x="40" y="16" width="20" height="10" rx="3" className="battery-nub" />
+                <rect x="26" y="24" width="48" height="62" rx="9" className="battery" />
+                {world.has.MAGNETIC_CELLS ? (
+                  <text x="50" y="68" textAnchor="middle" className="battery-sign">
                     {c.k === 0 ? '+' : '−'}
                   </text>
+                ) : (
+                  <path d="M54 32L38 58h12l-4 22 16-28H50z" className="battery-bolt" />
                 )}
               </svg>
             </div>
@@ -454,7 +549,7 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
           !c.got && c.next >= 0 && c.next !== c.at ? (
             <div key={`ghost${c.k}`} className="entity cell-ghost" style={pct(c.next)}>
               <svg viewBox="0 0 100 100" aria-hidden="true">
-                <rect x="34" y="28" width="32" height="44" rx="16" />
+                <rect x="30" y="26" width="40" height="56" rx="8" />
               </svg>
             </div>
           ) : null

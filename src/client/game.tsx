@@ -117,6 +117,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
   const [hintSeen, setHintSeen] = useState(load('mutator-hint-seen', false));
   const [replaying, setReplaying] = useState(false);
   const [flairBusy, setFlairBusy] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
   const reducedMotion = useMemo(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false, []);
   const loggedIn = !!data.user.name;
   const solvedOfficially = !!data.result;
@@ -374,6 +375,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           focus={focus}
           reducedMotion={reducedMotion}
           onAction={act}
+          onInspect={setInfo}
         />
       </section>
 
@@ -385,11 +387,12 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           <span className="st-par">par {puzzle.par}</span>
           <span className="st-cells" aria-label={`${cellsGot.filter(Boolean).length} of 2 cells`}>
             {cellsGot.map((g, k) => (
-              <svg key={k} width="14" height="20" viewBox="0 0 14 20" aria-hidden="true">
-                <rect x="1.5" y="1.5" width="11" height="17" rx="5.5" className={g ? 'cap got' : 'cap'} />
+              <svg key={k} width="15" height="22" viewBox="0 0 15 22" aria-hidden="true">
+                <rect x="5" y="0.5" width="5" height="3" rx="1" className={g ? 'cap got' : 'cap'} />
+                <rect x="1.5" y="3" width="12" height="18" rx="3" className={g ? 'cap got' : 'cap'} />
               </svg>
             ))}
-            <span>{state.got === 3 ? 'exit open' : state.got === 0 ? '2 cells to find' : '1 cell to find'}</span>
+            <span>{state.got === 3 ? 'exit open' : state.got === 0 ? '2 cells to grab' : '1 cell to grab'}</span>
           </span>
           {practice && <span className="st-mode">{replaying ? 'par route' : 'practice'}</span>}
           {isPast && !solvedOfficially && <span className="st-mode">from {prettyDate(data.date)}</span>}
@@ -397,11 +400,12 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
 
         <Forecast world={world} turn={state.turn} />
 
-        {!hintSeen && run.route.length === 0 && (
-          <p className="hint">
-            Swipe on the board or use the pad. Pick up both cells, then reach the exit. Rings show where each move would land you.
-          </p>
-        )}
+        <p className={info ? 'info' : 'info idle'} aria-live="polite">
+          {info ??
+            (!hintSeen && run.route.length === 0
+              ? 'You are the orange blob. Swipe or use the pad to move. Grab both energy cells (the batteries), then reach the EXIT door. Dashed rings show where each move would land you.'
+              : 'Tap and hold (or hover) any tile to see what it is.')}
+        </p>
 
         <Controls
           world={world}
