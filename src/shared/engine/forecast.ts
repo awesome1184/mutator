@@ -2,7 +2,7 @@
 // Everything here is derived from the same rules the simulator uses, so the
 // board never hides information from the player.
 
-import { ACTIONS } from './grid.ts';
+import { ACTIONS, manhattan } from './grid.ts';
 import { blightTarget, step } from './sim.ts';
 import type { Action, Dir, GameState, StepEvent } from './types.ts';
 import {
@@ -90,7 +90,8 @@ export function nextBlight(w: World, s: GameState): BlightForecast | null {
     s.echo,
     s.after,
     s.doorsOpen,
-    spreadTurn
+    spreadTurn,
+    s.crates
   );
   return target >= 0 ? { target, inMoves } : null;
 }
@@ -113,7 +114,7 @@ export function courierWaypoints(events: StepEvent[]): Waypoint[] {
       case 'gravity':
       case 'tether':
       case 'spinRide':
-        out.push({ to: e.to, kind: e.t, jump: e.t === 'move' && e.kind === 'phase' });
+        out.push({ to: e.to, kind: e.t, jump: (e.t === 'move' && e.kind === 'phase') || manhattan(e.from, e.to) > 2 });
         break;
       case 'portal':
         out.push({ to: e.to, kind: 'portal', jump: true });

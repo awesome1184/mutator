@@ -1,5 +1,5 @@
 import { ACTION_ARROW } from './engine/grid.ts';
-import { MUTATIONS } from './engine/mutations.ts';
+import { ALL_MUTATIONS, MUTATIONS } from './engine/mutations.ts';
 import { padNumber } from './engine/date.ts';
 import type { Action, MutationId } from './engine/types.ts';
 
@@ -28,7 +28,7 @@ export const BADGES: readonly Badge[] = [
   { id: 'month', title: 'Thirty straight', how: 'Solve on 30 days in a row.' },
   { id: 'anomaly', title: 'Sunday shift', how: 'Solve a three-mutation Sunday.' },
   { id: 'cat10', title: 'Ten on file', how: 'Solve puzzles with 10 different mutations.' },
-  { id: 'cat27', title: 'Full catalogue', how: 'Solve puzzles with all 27 mutations.' }
+  { id: 'cat27', title: 'Full catalogue', how: `Solve puzzles with all ${ALL_MUTATIONS.length} mutations.` }
 ];
 
 export function mutationTitle(muts: readonly MutationId[]): string {

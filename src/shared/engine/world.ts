@@ -47,6 +47,7 @@ export type World = {
   tether: number;
   droneStart: number;
   echoStart: number;
+  crateStart: number[];
   blightStart: number[];
   blightOrder: Dir[];
   /** Whether the state key must include the turn number. */
@@ -225,6 +226,7 @@ export function compileWorld(puzzle: Puzzle): World {
     hubs,
     tether: on('TETHER_PYLON') && puzzle.tether ? toIdx(puzzle.tether) : -1,
     droneStart: on('MIRROR_DRONE') && puzzle.droneStart ? toIdx(puzzle.droneStart) : -1,
+    crateStart: on('CRATES') ? (puzzle.crates ?? []).map(toIdx).sort((a, b) => a - b) : [],
     echoStart: on('ECHO') && puzzle.echoStart ? toIdx(puzzle.echoStart) : -1,
     blightStart: on('INFECTION') ? puzzle.blight.map(toIdx) : [],
     blightOrder: puzzle.blightOrder.length === 4 ? puzzle.blightOrder : ['U', 'R', 'D', 'L'],

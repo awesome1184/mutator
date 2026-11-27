@@ -3,9 +3,10 @@
 A daily puzzle for Reddit. Each day you get a 7×7 well plate and the same goal:
 pick up both cells, then reach the exit. What changes is the rules. Every day
 splices two mutations into the physics (Sunday gets three), drawn from a roster
-of 27: gravity that swings around the clock, portals that re-pair every three
+of 30: gravity that swings around the clock, portals that re-pair every three
 moves, floor that cracks behind you, a drone that mirrors you, blight that
-creeps one tile every other move, and more.
+creeps one tile every other move, cells that run away from you, crates to
+push, edges that wrap around, and more.
 
 There's no luck involved. The only randomness is in building the day's board.
 After that, the same moves always produce the same result, and everything the
@@ -71,7 +72,10 @@ secret, and the UI didn't fit on a phone. This rebuild:
   (`src/shared/engine`), with a precise turn order and a Hold action;
 - makes the server replay every submitted route, so a score is only accepted
   if the moves really solve the puzzle;
-- adds forecasts and landing previews, so nothing the world does is hidden;
+- adds forecasts, landing previews and connector lines (portal pairs, plates
+  to doors, magnet and cell pulls acting on you, the gravity direction), so
+  nothing the world does is hidden;
+- adds three new mutations: Wraparound, Skittish Cells and Crates;
 - adds a generator that targets a par range per weekday and rejects boards
   where any active mutation doesn't change the best route (checked by removing
   each mutation and re-solving);
@@ -148,8 +152,8 @@ npm run audit:days -- 2026-12-01 28    # generate four weeks, check par and timi
 npm run audit:pairs -- 2026-12-02      # every two-mutation combination
 ```
 
-At the time of writing, all 351 pairs and all 27 single mutations generate
-without falling back to the emergency board. In a 56-day run every puzzle
+At the time of writing, every single mutation and every two-mutation pair
+generates without falling back to the emergency board. In a 56-day run every puzzle
 landed in its par range, and the slowest day took about 5.5 s to generate.
 
 ## Hackathon checklist

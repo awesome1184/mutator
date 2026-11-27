@@ -312,7 +312,7 @@ function awardBadges(p: Profile, r: Result, puzzle: Puzzle): string[] {
   give('month', p.streak >= 30);
   give('anomaly', puzzle.mutations.length >= 3);
   give('cat10', p.seen.length >= 10);
-  give('cat27', p.seen.length >= 27);
+  give('cat27', p.seen.length >= ALL_MUTATIONS.length);
   return earned;
 }
 

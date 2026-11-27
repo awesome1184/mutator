@@ -2001,3 +2001,84 @@ button.cat {
 .info.idle {
   color: var(--ink-soft);
 }
+
+/* connector lines and new mutation art */
+.link {
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 2 12;
+  opacity: 0.55;
+  fill: none;
+}
+.plate-link {
+  stroke: #56663f;
+  opacity: 0.35;
+}
+.force {
+  stroke-width: 7;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.85;
+}
+.magnet-force {
+  stroke: #2d3c9e;
+  stroke-dasharray: 10 8;
+}
+.repel-force {
+  stroke: #e05a4a;
+  stroke-dasharray: 10 8;
+}
+.attract-force {
+  stroke: #c79f00;
+  stroke-dasharray: 10 8;
+}
+.fear-zone {
+  fill: rgba(227, 160, 8, 0.12);
+  stroke: rgba(227, 160, 8, 0.45);
+  stroke-width: 3;
+  stroke-dasharray: 4 6;
+}
+.wrap-edges path {
+  fill: none;
+  stroke: #3fa34d;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 10 10;
+  opacity: 0.7;
+}
+.wrap-edges g path {
+  stroke-dasharray: none;
+}
+.crate {
+  transition: transform 110ms ease-out;
+  z-index: 3;
+}
+.crate-box {
+  fill: #c98c4e;
+}
+.crate-brace {
+  stroke: #8a5523;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.crate-edge {
+  fill: none;
+  stroke: #6b3f17;
+  stroke-width: 6;
+}
+.gravity-hint {
+  z-index: 6;
+  transition: transform 90ms ease-out;
+  overflow: visible;
+}
+.gravity-hint svg {
+  overflow: visible;
+}
+.gravity-hint path {
+  fill: none;
+  stroke: #1f6fd1;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

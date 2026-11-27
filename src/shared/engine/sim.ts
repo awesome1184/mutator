@@ -11,7 +11,7 @@
 //   7. World: orbits, afterimage, decay, blight, turntables
 //   8. Win check: both cells collected and standing on the exit
 
-import { CELLS, chebyshev, colOf, dirBetween, DIRS, opposite, rotateDir, rowOf, spinAround, stepIdx } from './grid.ts';
+import { CELLS, chebyshev, colOf, dirBetween, DIRS, manhattan, opposite, rotateDir, rowOf, spinAround, stepIdx, wrapIdx } from './grid.ts';
 import type { Action, Dir, GameState, StepEvent, StepResult } from './types.ts';
 import {
   activePhaseLayer,
@@ -80,6 +80,8 @@ export function initialState(w: World): GameState {
     after: -1,
     doorsOpen: false,
     got: 0,
+    cells: w.cellPaths.map((p) => p[0] as number),
+    crates: [...w.crateStart],
     decay,
     blight,
     solved: false
@@ -96,6 +98,8 @@ type Ctx = {
   after: number;
   doorsOpen: boolean;
   got: number;
+  cells: number[];
+  crates: number[];
   pendingRot: number;
   decay: Int8Array;
   blight: Uint8Array;
@@ -110,6 +114,17 @@ type Ctx = {
 
 type Mover = 'courier' | 'drone' | 'echo';
 
+/** Where cell k is now: it orbits by schedule, flees (Skittish) or stays put. */
+export function cellAt(w: World, s: { cells: number[]; turn: number }, k: number): number {
+  if (w.has.SKITTISH_CELLS) return s.cells[k] as number;
+  return cellPosAt(w, k, s.turn);
+}
+
+/** Neighbour for anything that moves; wraps around the edges with Wraparound. */
+function nb(w: World, i: number, d: Dir): number {
+  return w.has.WRAPAROUND ? wrapIdx(i, d) : stepIdx(i, d);
+}
+
 /** Whether `i` can be entered by `who` travelling in direction `dir`. */
 function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover): boolean {
   if (i < 0) return true;
@@ -119,6 +134,7 @@ function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover): boolean {
   if (who !== 'echo' && ctx.echo === i) return true;
   if (who !== 'courier' && ctx.pos === i) return true;
   if (ctx.after === i) return true;
+  if (ctx.crates.length > 0 && ctx.crates.includes(i)) return true;
   const ow = L.oneway[i] as number;
   if (ow >= 0 && (dir === null || DIRS[ow] !== dir)) return true;
   const b = ctx.beam;
@@ -138,7 +154,7 @@ function collectAt(ctx: Ctx, at: number): void {
   for (let k = 0; k < 2; k++) {
     const bit = 1 << k;
     if (ctx.got & bit) continue;
-    if (cellPosAt(ctx.w, k, ctx.turn) === at) {
+    if (cellAt(ctx.w, ctx, k) === at) {
       ctx.got |= bit;
       ctx.events.push({ t: 'collect', index: k, at });
     }
@@ -151,6 +167,7 @@ function pressPlate(ctx: Ctx, at: number): void {
     // Doors never slam shut on something standing in a doorway.
     const L = ctx.L;
     if (L.door[ctx.pos] || (ctx.drone >= 0 && L.door[ctx.drone]) || (ctx.echo >= 0 && L.door[ctx.echo])) return;
+    if (ctx.crates.some((c) => L.door[c])) return;
   }
   ctx.doorsOpen = !ctx.doorsOpen;
   ctx.events.push({ t: 'doors', open: ctx.doorsOpen, at });
@@ -160,9 +177,32 @@ function pressPlate(ctx: Ctx, at: number): void {
 function courierEnter(ctx: Ctx, to: number, ev: StepEvent): void {
   ctx.left.push(ctx.pos);
   ctx.events.push(ev);
+  if (ctx.w.has.WRAPAROUND && ev.t !== 'portal' && manhattan(ctx.pos, to) > 2) ctx.events.push({ t: 'wrap', from: ctx.pos, to });
   ctx.pos = to;
   collectAt(ctx, to);
   pressPlate(ctx, to);
+}
+
+/** Crates move onto plain ground, plates, ice or cracked floor; never onto objectives. */
+function pushCrate(ctx: Ctx, at: number, d: Dir): boolean {
+  const w = ctx.w;
+  const L = ctx.L;
+  const to = nb(w, at, d);
+  if (to < 0 || ctx.crates.includes(to)) return false;
+  if (to === w.exit || ctx.cells.includes(to) || to === ctx.pos) return false;
+  if ((w.portalAt[to] as number) >= 0 || (L.conv[to] as number) >= 0 || (L.vent[to] as number) >= 0) return false;
+  if (L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
+  if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
+  // Temporarily lift the crate so it does not block itself.
+  ctx.crates = ctx.crates.filter((c) => c !== at);
+  if (blocked(ctx, to, d, 'echo') || to === ctx.echo) {
+    ctx.crates = [...ctx.crates, at].sort((a, b) => a - b);
+    return false;
+  }
+  ctx.crates = [...ctx.crates, to].sort((a, b) => a - b);
+  ctx.events.push({ t: 'crate', from: at, to });
+  pressPlate(ctx, to);
+  return true;
 }
 
 function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
@@ -193,7 +233,7 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
         const pushes = tier === 'light' ? 2 : tier === 'heavy' ? 0 : 1;
         const d = DIRS[cv] as Dir;
         for (let k = 0; k < pushes; k++) {
-          const nxt = stepIdx(ctx.pos, d);
+          const nxt = nb(w, ctx.pos, d);
           if (blocked(ctx, nxt, d, 'courier')) break;
           courierEnter(ctx, nxt, { t: 'conveyor', from: ctx.pos, to: nxt });
           travel = d;
@@ -209,7 +249,7 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
       const v = L.vent[p] as number;
       if (v >= 0 && markUsed(p, 2)) {
         const d = DIRS[v] as Dir;
-        const nxt = stepIdx(p, d);
+        const nxt = nb(w, p, d);
         if (!blocked(ctx, nxt, d, 'courier')) {
           courierEnter(ctx, nxt, { t: 'vent', from: p, to: nxt });
           travel = d;
@@ -223,7 +263,7 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
       const rf = L.refl[p] as number;
       if (rf !== 0 && markUsed(p, 4)) {
         const d = rotateDir(travel, rf);
-        const nxt = stepIdx(p, d);
+        const nxt = nb(w, p, d);
         if (!blocked(ctx, nxt, d, 'courier')) {
           courierEnter(ctx, nxt, { t: 'reflect', from: p, to: nxt });
           travel = d;
@@ -243,7 +283,7 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
 
     if (w.has.CRYO_SLICK && !moved && travel && L.ice[ctx.pos]) {
       const p = ctx.pos;
-      const nxt = stepIdx(p, travel);
+      const nxt = nb(w, p, travel);
       if (!blocked(ctx, nxt, travel, 'courier')) {
         courierEnter(ctx, nxt, { t: 'slide', from: p, to: nxt });
         moved = true;
@@ -258,10 +298,10 @@ function chargedCells(ctx: Ctx): Dir | null {
   const w = ctx.w;
   let movedDir: Dir | null = null;
   if (!(ctx.got & 1)) {
-    const c0 = cellPosAt(w, 0, ctx.turn);
+    const c0 = cellAt(w, ctx, 0);
     const away = dirBetween(c0, ctx.pos);
     if (away) {
-      const tgt = stepIdx(ctx.pos, away);
+      const tgt = nb(w, ctx.pos, away);
       if (!blocked(ctx, tgt, away, 'courier')) {
         courierEnter(ctx, tgt, { t: 'repel', from: ctx.pos, to: tgt });
         movedDir = away;
@@ -269,7 +309,7 @@ function chargedCells(ctx: Ctx): Dir | null {
     }
   }
   if (!(ctx.got & 2)) {
-    const c1 = cellPosAt(w, 1, ctx.turn);
+    const c1 = cellAt(w, ctx, 1);
     const p = ctx.pos;
     let pull: Dir | null = null;
     if (rowOf(p) === rowOf(c1) && p !== c1 && Math.abs(colOf(p) - colOf(c1)) <= 2) {
@@ -278,7 +318,7 @@ function chargedCells(ctx: Ctx): Dir | null {
       pull = rowOf(c1) > rowOf(p) ? 'D' : 'U';
     }
     if (pull) {
-      const tgt = stepIdx(p, pull);
+      const tgt = nb(w, p, pull);
       if (!blocked(ctx, tgt, pull, 'courier')) {
         courierEnter(ctx, tgt, { t: 'attract', from: p, to: tgt });
         movedDir = pull;
@@ -336,6 +376,8 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     after: s.after,
     doorsOpen: s.doorsOpen,
     got: s.got,
+    cells: [...s.cells],
+    crates: [...s.crates],
     pendingRot: hold ? s.pendingRot : 0,
     decay: w.has.DECAY ? s.decay.slice() : s.decay,
     blight: w.has.INFECTION ? s.blight.slice() : s.blight,
@@ -360,11 +402,11 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     let moved = false;
     for (let k = 0; k < steps; k++) {
       const from = ctx.pos;
-      const nxt = stepIdx(from, moveDir);
+      const nxt = nb(w, from, moveDir);
       if (nxt < 0) break;
       if (w.tether >= 0 && chebyshev(from, w.tether) <= 2 && chebyshev(nxt, w.tether) > 2) break;
       if (L.wall[nxt] && phaseNow && k === 0) {
-        const beyond = stepIdx(nxt, moveDir);
+        const beyond = nb(w, nxt, moveDir);
         const leash = w.tether >= 0 && beyond >= 0 && chebyshev(from, w.tether) <= 2 && chebyshev(beyond, w.tether) > 2;
         if (beyond >= 0 && !leash && !blocked(ctx, beyond, moveDir, 'courier')) {
           courierEnter(ctx, beyond, { t: 'move', from, to: beyond, kind: 'phase' });
@@ -372,6 +414,8 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
           break;
         }
       }
+      // Crates: walking into one pushes it a tile, if the tile beyond is free.
+      if (ctx.crates.includes(nxt) && !pushCrate(ctx, nxt, moveDir)) break;
       if (blocked(ctx, nxt, moveDir, 'courier')) break;
       courierEnter(ctx, nxt, { t: 'move', from, to: nxt, kind: k === 0 && kind === 'inertia' ? 'walk' : kind });
       if ((L.oneway[nxt] as number) >= 0) ctx.events.push({ t: 'oneway', at: nxt });
@@ -383,7 +427,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   // 2. Echo (repeats the previous action) and Mirror Drone (mirrors this one).
   if (w.has.ECHO && ctx.echo >= 0 && s.last && s.last !== 'W') {
     const d = s.last as Dir;
-    const tgt = stepIdx(ctx.echo, d);
+    const tgt = nb(w, ctx.echo, d);
     if (!blocked(ctx, tgt, d, 'echo')) {
       ctx.events.push({ t: 'echo', from: ctx.echo, to: tgt });
       ctx.echo = tgt;
@@ -392,7 +436,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   }
   if (w.has.MIRROR_DRONE && ctx.drone >= 0 && moveDir) {
     const d = opposite(moveDir);
-    const tgt = stepIdx(ctx.drone, d);
+    const tgt = nb(w, ctx.drone, d);
     if (!blocked(ctx, tgt, d, 'drone')) {
       ctx.events.push({ t: 'drone', from: ctx.drone, to: tgt });
       ctx.drone = tgt;
@@ -419,7 +463,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     const falls = tier === 'light' ? 2 : tier === 'heavy' ? 0 : 1;
     const gd = gravityDir(turn);
     for (let k = 0; k < falls; k++) {
-      const tgt = stepIdx(ctx.pos, gd);
+      const tgt = nb(w, ctx.pos, gd);
       if (blocked(ctx, tgt, gd, 'courier')) break;
       courierEnter(ctx, tgt, { t: 'gravity', from: ctx.pos, to: tgt });
       resolveTileEffects(ctx, gd);
@@ -441,7 +485,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   const next = turn + 1;
   const pos0 = ctx.pos;
 
-  if (w.has.ORBITAL_CELLS) {
+  if (w.has.ORBITAL_CELLS && !w.has.SKITTISH_CELLS) {
     for (let k = 0; k < 2; k++) {
       if (ctx.got & (1 << k)) continue;
       const from = cellPosAt(w, k, turn);
@@ -449,6 +493,8 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       if (from !== to) ctx.events.push({ t: 'orbit', index: k, from, to });
     }
   }
+
+  if (w.has.SKITTISH_CELLS) fleeCells(ctx, pos0);
 
   let after = -1;
   if (w.has.AFTERIMAGE && s.prevPos >= 0) {
@@ -479,7 +525,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   }
 
   if (w.has.INFECTION && next % 2 === 0) {
-    const target = blightTarget(w, ctx.L, ctx.blight, ctx.decay, pos0, ctx.drone, ctx.echo, after, ctx.doorsOpen, next);
+    const target = blightTarget(w, ctx.L, ctx.blight, ctx.decay, pos0, ctx.drone, ctx.echo, after, ctx.doorsOpen, next, ctx.crates);
     if (target >= 0) {
       ctx.blight[target] = 1;
       ctx.events.push({ t: 'blight', at: target });
@@ -497,6 +543,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       ctx.drone = spinAround(hub, ctx.drone);
       ctx.echo = spinAround(hub, ctx.echo);
       after = spinAround(hub, after);
+      if (ctx.crates.length) ctx.crates = ctx.crates.map((c) => spinAround(hub, c)).sort((a, b) => a - b);
       const ring = [stepIdx(hub, 'U'), stepIdx(hub, 'R'), stepIdx(hub, 'D'), stepIdx(hub, 'L')];
       if (w.has.DECAY) {
         const vals = ring.map((p) => ctx.decay[p] as number);
@@ -511,7 +558,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   }
 
   // Orbiting cells that swing into you are caught.
-  if (w.has.ORBITAL_CELLS) {
+  if (w.has.ORBITAL_CELLS && !w.has.SKITTISH_CELLS) {
     for (let k = 0; k < 2; k++) {
       const bit = 1 << k;
       if (!(ctx.got & bit) && cellPosAt(w, k, next) === pos) {
@@ -539,11 +586,43 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       after,
       doorsOpen: ctx.doorsOpen,
       got: ctx.got,
+      cells: ctx.cells,
+      crates: ctx.crates,
       decay: ctx.decay,
       blight: ctx.blight,
       solved
     }
   };
+}
+
+/**
+ * Skittish cells: an uncollected cell within 2 tiles of you steps one tile
+ * directly away, along the longer axis first, if it has room.
+ */
+function fleeCells(ctx: Ctx, you: number): void {
+  const w = ctx.w;
+  const L = ctx.L;
+  for (let k = 0; k < 2; k++) {
+    if (ctx.got & (1 << k)) continue;
+    const c = ctx.cells[k] as number;
+    if (manhattan(c, you) > 2) continue;
+    const dr = rowOf(c) - rowOf(you);
+    const dc = colOf(c) - colOf(you);
+    const vert: Dir | null = dr > 0 ? 'D' : dr < 0 ? 'U' : null;
+    const horiz: Dir | null = dc > 0 ? 'R' : dc < 0 ? 'L' : null;
+    const order = (Math.abs(dr) >= Math.abs(dc) ? [vert, horiz] : [horiz, vert]).filter((d): d is Dir => d !== null);
+    for (const d of order) {
+      const to = nb(w, c, d);
+      if (to < 0 || to === you || to === w.exit || to === ctx.drone || to === ctx.echo) continue;
+      if (ctx.cells.includes(to) || ctx.crates.includes(to)) continue;
+      if (L.wall[to] || L.special[to] || (w.portalAt[to] as number) >= 0) continue;
+      if (ctx.decay[to] === 0 || ctx.blight[to] || ctx.after === to) continue;
+      if (ctx.flood > 0 && isFloodedAt(w, ctx.turn, to, ctx.flood)) continue;
+      ctx.cells[k] = to;
+      ctx.events.push({ t: 'flee', index: k, from: c, to });
+      break;
+    }
+  }
 }
 
 /** Cracked floor that crumbles under Decay. */
@@ -573,7 +652,8 @@ export function blightTarget(
   echo: number,
   after: number,
   doorsOpen: boolean,
-  spreadTurn: number
+  spreadTurn: number,
+  crates: readonly number[] = []
 ): number {
   const closed = closedPolarity(spreadTurn);
   for (let src = 0; src < CELLS; src++) {
@@ -581,7 +661,7 @@ export function blightTarget(
     for (const d of w.blightOrder) {
       const cand = stepIdx(src, d);
       if (cand < 0 || blight[cand]) continue;
-      if (cand === pos || cand === drone || cand === echo || cand === after) continue;
+      if (cand === pos || cand === drone || cand === echo || cand === after || crates.includes(cand)) continue;
       if (decay[cand] === 0) continue;
       const g = L.gate[cand] as number;
       if (w.has.PHASE_GATES && g >= 0 && g === closed) continue;
@@ -629,6 +709,8 @@ export function stateKey(w: World, s: GameState): string {
     ',' + s.pos + ',' + s.got + ',' + s.drone + ',' + s.echo + ',' + (s.last ?? '-') + (s.inertia ?? '-') +
     s.pendingRot + ',' + s.after + (s.doorsOpen ? 'o' : 'c');
   if (w.has.AFTERIMAGE) k += ',' + s.prevPos;
+  if (w.has.SKITTISH_CELLS) k += ',c' + s.cells.join('.');
+  if (w.has.CRATES) k += ',x' + s.crates.join('.');
   if (w.has.DECAY) {
     k += '|';
     const d = s.decay;

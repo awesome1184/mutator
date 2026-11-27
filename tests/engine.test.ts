@@ -185,3 +185,38 @@ test('solver par is a lower bound for random routes', () => {
   const res = solve(w, { maxStates: 200000, maxDepth: 30 });
   assert.equal(res.par, p.par);
 });
+
+test('wraparound: walking off an edge comes back on the other side', () => {
+  const p = makePuzzle({ mutations: ['WRAPAROUND'], start: co(3, 0) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'L');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 6));
+  assert.ok(r.events.some((e) => e.t === 'wrap'));
+});
+
+test('crates: pushed by walking, never by forces, and they block', () => {
+  const p = makePuzzle({ mutations: ['CRATES'], start: co(3, 0), crates: [co(3, 1)], cells: [co(0, 0), co(6, 6)], grid: walls([3, 3]) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.ok(r.ok);
+  assert.deepEqual(r.states[1]?.crates, [at(3, 2)]);
+  assert.equal(r.states[1]?.pos, at(3, 1));
+  // The crate is now against a wall, so the next push is refused.
+  assert.equal(step(w, r.states[1]!, 'R').ok, false);
+});
+
+test('skittish cells step away when you come within 2 tiles', () => {
+  const p = makePuzzle({ mutations: ['SKITTISH_CELLS'], start: co(3, 0), cells: [co(3, 3), co(6, 6)] });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.equal(r.states[1]?.cells[0], at(3, 4));
+  assert.ok(r.events[0]?.some((e) => e.t === 'flee'));
+});
+
+test('a cornered skittish cell can be caught', () => {
+  const p = makePuzzle({ mutations: ['SKITTISH_CELLS'], start: co(0, 4), cells: [co(0, 6), co(6, 0)], exit: co(3, 3) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R']);
+  assert.equal((r.states[2]!.got & 1) !== 0, true);
+});

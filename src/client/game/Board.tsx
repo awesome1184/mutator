@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent } from 'react';
-import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween } from '../../shared/engine/grid.ts';
+import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, manhattan } from '../../shared/engine/grid.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import { nextBlight, courierWaypoints, type Preview } from '../../shared/engine/forecast.ts';
+import { cellAt, massTier } from '../../shared/engine/sim.ts';
 import type { Action, Dir, GameState, StepEvent } from '../../shared/engine/types.ts';
 import {
   activePhaseLayer,
@@ -33,18 +34,25 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
   if (s.pos === i) out.push('You. Grab both cells, then reach the exit.');
   for (const k of [0, 1]) {
     if (s.got & (1 << k)) continue;
-    if (cellPosAt(w, k, s.turn) === i) {
+    if (cellAt(w, s, k) === i) {
       out.push(
-        w.has.MAGNETIC_CELLS
+        w.has.SKITTISH_CELLS
+          ? 'Skittish cell. It steps away whenever you end a move within 2 tiles of it. Corner it.'
+          : w.has.MAGNETIC_CELLS
           ? k === 0
             ? 'Cell (+). Pushes you away if you stop next to it.'
             : 'Cell (−). Pulls you in from up to 2 tiles away.'
           : 'Energy cell. Walk onto it to pick it up.'
       );
-    } else if (w.has.ORBITAL_CELLS && cellPosAt(w, k, s.turn + 1) === i) {
+    } else if (w.has.SKITTISH_CELLS && manhattan(cellAt(w, s, k), i) <= 2) {
+      out.push('Inside a skittish cell’s zone. End a move here and the cell runs.');
+    } else if (w.has.ORBITAL_CELLS && !w.has.SKITTISH_CELLS && cellPosAt(w, k, s.turn + 1) === i) {
       out.push('An orbiting cell moves here after your next move.');
     }
   }
+  if (s.crates.includes(i)) out.push('Crate. Walk into it to push it one tile. It can’t be pulled.');
+  if (w.has.WRAPAROUND && (rowOf(i) === 0 || rowOf(i) === N - 1 || colOf(i) === 0 || colOf(i) === N - 1))
+    out.push('Edge tile. Moving off the board here brings you in on the opposite side.');
   if (s.drone === i) out.push('Mirror drone. Moves the opposite way to you. Solid.');
   if (s.echo === i) out.push('Echo. Repeats your previous move one move later. Solid.');
   if (t.exit) out.push(t.exit.open ? 'Exit, open. Step on it to finish.' : 'Exit, locked. It opens once you have both cells.');
@@ -400,9 +408,61 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
   const cells = [0, 1].map((k) => ({
     k,
     got: (state.got & (1 << k)) !== 0,
-    at: cellPosAt(world, k, state.turn),
-    next: world.has.ORBITAL_CELLS ? cellPosAt(world, k, state.turn + 1) : -1
+    at: cellAt(world, state, k),
+    next: world.has.ORBITAL_CELLS && !world.has.SKITTISH_CELLS ? cellPosAt(world, k, state.turn + 1) : -1
   }));
+
+  // Connector lines: what is about to act on you, and what is linked to what.
+  const centre2 = (i: number): { x: number; y: number } => ({ x: colOf(i) * 100 + 50, y: rowOf(i) * 100 + 50 });
+  const links: { a: number; b: number; cls: string; color?: string | undefined }[] = [];
+  if (world.has.PORTALS) {
+    const mode = portalMode(state.turn);
+    const seen = new Set<number>();
+    for (let l = 0; l < 4; l++) {
+      const m = portalPartner(l, mode);
+      if (seen.has(l) || world.portalPos[l]! < 0 || world.portalPos[m]! < 0) continue;
+      seen.add(l).add(m);
+      const group = mode === 0 ? (l < 2 ? 0 : 1) : l % 2 === 0 ? 0 : 1;
+      links.push({ a: world.portalPos[l]!, b: world.portalPos[m]!, cls: 'link portal-link', color: PORTAL_INK[group] });
+    }
+  }
+  if (world.has.BLAST_DOORS) {
+    const L0 = layerFor(world, state.turn);
+    const plates: number[] = [];
+    const doors: number[] = [];
+    for (let i = 0; i < CELLS; i++) {
+      if (L0.plate[i]) plates.push(i);
+      if (L0.door[i]) doors.push(i);
+    }
+    for (const pl of plates) for (const d of doors) links.push({ a: pl, b: d, cls: 'link plate-link' });
+  }
+  // Forces acting on you right now (what a Hold would do).
+  const hold = previews.find((p) => p.action === 'W');
+  const forces: { a: number; b: number; cls: string }[] = [];
+  for (const e of hold?.events ?? []) {
+    if (e.t === 'magnet') {
+      const d = dirBetween(e.from, e.to);
+      const mag = world.magnets.find((m) =>
+        d === 'L' || d === 'R'
+          ? rowOf(m) === rowOf(e.from) && (d === 'R' ? colOf(m) > colOf(e.from) : colOf(m) < colOf(e.from))
+          : colOf(m) === colOf(e.from) && (d === 'D' ? rowOf(m) > rowOf(e.from) : rowOf(m) < rowOf(e.from))
+      );
+      if (mag !== undefined) forces.push({ a: e.from, b: mag, cls: 'force magnet-force' });
+    }
+    if (e.t === 'repel' || e.t === 'attract') {
+      const cell = cellAt(world, state, e.t === 'repel' ? 0 : 1);
+      forces.push({ a: e.from, b: cell, cls: `force ${e.t}-force` });
+    }
+  }
+  const gravityNow = world.has.GRAVITY && massTier(world, state.got) !== 'heavy' ? (['D', 'L', 'U', 'R'] as Dir[])[Math.floor(state.turn / 3) % 4] : null;
+  const fearZones: number[] = [];
+  if (world.has.SKITTISH_CELLS) {
+    const L0 = layerFor(world, state.turn);
+    for (const c of cells) {
+      if (c.got) continue;
+      for (let i = 0; i < CELLS; i++) if (i !== c.at && manhattan(i, c.at) <= 2 && !L0.wall[i]) fearZones.push(i);
+    }
+  }
   const beam = beamLine(world, state.turn);
   const echoNext = world.has.ECHO && state.echo >= 0 && state.last && state.last !== 'W' ? stepIdx(state.echo, state.last) : -1;
 
@@ -491,6 +551,11 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
         </div>
 
         <svg className="overlay" viewBox="0 0 700 700" aria-hidden="true">
+          <defs>
+            <marker id="mut-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0L10 5L0 10z" fill="context-stroke" />
+            </marker>
+          </defs>
           {tether >= 0 && (
             <rect
               x={(colOf(tether) - 2) * 100 + 4}
@@ -523,6 +588,35 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
               />
             ) : null
           )}
+          {fearZones.map((i, k) => (
+            <circle key={`fz${k}`} cx={centre2(i).x} cy={centre2(i).y} r="44" className="fear-zone" />
+          ))}
+          {world.has.WRAPAROUND && (
+            <g className="wrap-edges">
+              <path d="M4 40V660M696 40V660M40 4H660M40 696H660" />
+              {[150, 350, 550].map((v) => (
+                <g key={v}>
+                  <path d={`M14 ${v - 14}l-8 14 8 14M686 ${v - 14}l8 14-8 14M${v - 14} 14l14-8 14 8M${v - 14} 686l14 8 14-8`} />
+                </g>
+              ))}
+            </g>
+          )}
+          {links.map((l, k) => (
+            <line
+              key={`ln${k}`}
+              x1={centre2(l.a).x}
+              y1={centre2(l.a).y}
+              x2={centre2(l.b).x}
+              y2={centre2(l.b).y}
+              className={l.cls}
+              style={l.color ? { stroke: l.color } : undefined}
+            />
+          ))}
+          {forces.map((f, k) => {
+            const a = centre2(f.a);
+            const b = centre2(f.b);
+            return <line key={`fc${k}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={f.cls} markerEnd="url(#mut-arrow)" />;
+          })}
           {focusSegments.map((pts, k) => (
             <polyline key={k} points={pts} className="peek-path" />
           ))}
@@ -555,6 +649,22 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
           ) : null
         )}
 
+        {state.crates.map((c, k) => (
+          <div key={`crate${k}`} className="entity crate" style={pct(c)}>
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <rect x="12" y="12" width="76" height="76" rx="6" className="crate-box" />
+              <path d="M24 24l52 52M76 24L24 76" className="crate-brace" />
+              <rect x="12" y="12" width="76" height="76" rx="6" className="crate-edge" />
+            </svg>
+          </div>
+        ))}
+        {gravityNow && (
+          <div className="entity gravity-hint" style={pct(courierAt)}>
+            <svg viewBox="0 0 100 100" aria-hidden="true" style={{ transform: `rotate(${ROT[gravityNow]}deg)` }}>
+              <path d="M50 -4V-24M41 -15l9-9 9 9" />
+            </svg>
+          </div>
+        )}
         {state.drone >= 0 && (
           <div className="entity drone" style={pct(state.drone)}>
             <svg viewBox="0 0 100 100" aria-hidden="true">

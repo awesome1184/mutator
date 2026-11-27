@@ -29,7 +29,10 @@ const SIGNATURE: Partial<Record<MutationId, StepEvent['t'][]>> = {
   VENTILATION: ['vent'],
   ROTORS: ['rotor'],
   TURNTABLES: ['spin'],
-  ORBITAL_CELLS: ['orbit']
+  ORBITAL_CELLS: ['orbit'],
+  SKITTISH_CELLS: ['flee'],
+  CRATES: ['crate'],
+  WRAPAROUND: ['wrap']
 };
 
 type Builder = {
@@ -91,6 +94,7 @@ function blankPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[], pi
     vents: [],
     phaseTiles: [],
     rotors: [],
+    crates: [],
     droneStart: null,
     echoStart: null,
     beam: null,
@@ -414,6 +418,14 @@ function buildBoard(
       if (t >= 0) p.rotors.push({ ...toCoord(t), rot: rng.next() < 0.5 ? 1 : -1 });
     }
   }
+  if (has('CRATES')) {
+    const n = rng.int(2, 4);
+    for (let k = 0; k < n; k++) {
+      const t = claim(b, (i) => rowOf(i) > 0 && rowOf(i) < N - 1 && colOf(i) > 0 && colOf(i) < N - 1 && manhattan(i, start) >= 2, true);
+      if (t >= 0) (p.crates ??= []).push(toCoord(t));
+    }
+    if ((p.crates ?? []).length === 0) return null;
+  }
   if (has('PULSE_BEAM')) {
     const axis = rng.next() < 0.5 ? 'row' : 'col';
     const sv = axis === 'row' ? rowOf(start) : colOf(start);
@@ -452,7 +464,7 @@ function buildBoard(
 
   // 10. Extra walls, fewer when the mutations already block a lot.
   const blockers = mutations.filter((m) =>
-    ['DECAY', 'INFECTION', 'PHASE_GATES', 'BLAST_DOORS', 'TURNTABLES', 'MAGNETISM', 'TETHER_PYLON', 'AFTERIMAGE', 'ECHO', 'ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
+    ['CRATES', 'DECAY', 'INFECTION', 'PHASE_GATES', 'BLAST_DOORS', 'TURNTABLES', 'MAGNETISM', 'TETHER_PYLON', 'AFTERIMAGE', 'ECHO', 'ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
   ).length;
   const [wMin, wMax] = tier.walls;
   const extra = Math.max(0, rng.int(wMin, wMax + 1) - blockers - (style === 'divider' ? 3 : 0));
@@ -686,6 +698,7 @@ function fallbackPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[],
   if (has('VENTILATION')) p.vents = [{ r: 4, c: 4, dir: 'U' }];
   if (has('PHASE_LAYERS')) p.phaseTiles = [{ r: 3, c: 2, layer: 0 }, { r: 3, c: 4, layer: 1 }];
   if (has('ROTORS')) p.rotors = [{ r: 2, c: 2, rot: 1 }];
+  if (has('CRATES')) p.crates = [{ r: 4, c: 3 }];
   if (has('MIRROR_DRONE')) p.droneStart = { r: 0, c: 6 };
   if (has('ECHO')) p.echoStart = { r: 6, c: 0 };
   if (has('PULSE_BEAM')) p.beam = { axis: 'col', start: 0, step: 1 };
@@ -726,6 +739,10 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
     mutations.push(host);
   }
   mutations = mutations.filter((m) => ALL_MUTATIONS.includes(m));
+  // Orbiting and skittish cells cannot both drive the cells.
+  if (mutations.includes('ORBITAL_CELLS') && mutations.includes('SKITTISH_CELLS')) {
+    mutations = mutations.filter((m) => m !== 'SKITTISH_CELLS');
+  }
 
   const seed = `${dateKey}:v${RULES_VERSION}:${mutations.join('+')}`;
   const maxAttempts = opts.maxAttempts ?? 120;

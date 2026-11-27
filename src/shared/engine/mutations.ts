@@ -17,6 +17,8 @@ export type MutationMeta = {
   timed: boolean;
   /** Mutations that need one of these present to matter. */
   hosts?: MutationId[];
+  /** Mutations that cannot share a puzzle with this one. */
+  clashes?: MutationId[];
 };
 
 export const ALL_MUTATIONS: readonly MutationId[] = [
@@ -46,7 +48,10 @@ export const ALL_MUTATIONS: readonly MutationId[] = [
   'INERTIA',
   'FLOOD',
   'PHASE_LAYERS',
-  'ROTORS'
+  'ROTORS',
+  'WRAPAROUND',
+  'SKITTISH_CELLS',
+  'CRATES'
 ];
 
 export const MUTATIONS: Record<MutationId, MutationMeta> = {
@@ -256,6 +261,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     name: 'Orbiting Cells',
     ink: '#E6B800',
     darkText: true,
+    clashes: ['SKITTISH_CELLS'],
     short: 'Cells you have not collected circle a 2×2 loop after every move.',
     rule: 'After every move, each uncollected cell steps clockwise around its 4-tile loop. A dashed outline shows where it goes next. If it swings into you, you catch it.',
     tip: 'Do not chase the cell. Go to where it will be.',
@@ -319,6 +325,36 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     short: 'Stepping on a rotor twists your next input by 90°.',
     rule: 'Entering a rotor queues a 90° twist (clockwise or anticlockwise) for your next directional input. While it is queued, the pad arrows show where each press will really take you.',
     tip: 'Press the direction that will rotate into the one you want.',
+    timed: false
+  },
+  WRAPAROUND: {
+    id: 'WRAPAROUND',
+    name: 'Wraparound',
+    ink: '#3FA34D',
+    darkText: false,
+    short: 'Walk off one edge and you come back in on the opposite edge.',
+    rule: 'The board wraps: anything that moves off an edge (you, the drone, the echo, belt pushes, slides, gravity) reappears on the opposite edge. Magnets and beams still stop at the edges.',
+    tip: 'The far side of the board is often one step away.',
+    timed: false
+  },
+  SKITTISH_CELLS: {
+    id: 'SKITTISH_CELLS',
+    name: 'Skittish Cells',
+    ink: '#E3A008',
+    darkText: true,
+    short: 'Cells run from you when you get within 2 tiles.',
+    rule: 'After each move, an uncollected cell within 2 tiles of you steps one tile directly away, along the longer axis first. It only moves onto plain floor, so walls, corners and other objects trap it. The dashed zone around a cell shows how close you can get.',
+    tip: 'Herd the cell into a corner, then step onto it.',
+    timed: false
+  },
+  CRATES: {
+    id: 'CRATES',
+    name: 'Crates',
+    ink: '#A0652B',
+    darkText: false,
+    short: 'Walk into a crate to push it one tile. You can never pull it.',
+    rule: 'Walking into a crate pushes it one tile if the tile beyond is plain floor, a plate, ice or cracked floor. Forces like gravity and belts cannot push crates, and crates block everything. A crate on a plate presses it.',
+    tip: 'Before every push, check you can still get behind the crate later.',
     timed: false
   }
 };

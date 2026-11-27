@@ -173,6 +173,25 @@ const GLYPHS: Record<MutationId, ReactElement> = {
       <path d="M19 12a7 7 0 11-3-5.7" />
       <path d="M16.5 2.5l-.5 4 4 .5" />
     </g>
+  ),
+  WRAPAROUND: (
+    <g {...P}>
+      <rect x="6" y="6" width="12" height="12" rx="1.5" />
+      <path d="M2 12h3M19 12h3M20 9.5l2 2.5-2 2.5M4 9.5L2 12l2 2.5" />
+    </g>
+  ),
+  SKITTISH_CELLS: (
+    <g {...P}>
+      <rect x="13" y="7" width="7" height="12" rx="2" />
+      <path d="M15 5h3" />
+      <path d="M3 10h6M2 14h6M4 18h5" />
+    </g>
+  ),
+  CRATES: (
+    <g {...P}>
+      <rect x="4" y="4" width="16" height="16" rx="1.5" />
+      <path d="M4 4l16 16M20 4L4 20" />
+    </g>
   )
 };
 

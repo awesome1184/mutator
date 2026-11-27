@@ -33,6 +33,10 @@ export const TIERS: Record<number, Tier> = {
 /** PAYLOAD_MASS only matters next to a force, so it is never a primary. */
 const PRIMARY_POOL: readonly MutationId[] = ALL_MUTATIONS.filter((m) => m !== 'PAYLOAD_MASS');
 
+export function clashes(a: MutationId, b: MutationId): boolean {
+  return !!MUTATIONS[a].clashes?.includes(b) || !!MUTATIONS[b].clashes?.includes(a);
+}
+
 function cycleOrder(cycle: number): MutationId[] {
   return new SeededRng(`mutator:cycle:${cycle}`).shuffle(PRIMARY_POOL);
 }
@@ -71,9 +75,14 @@ export function dayPlan(dateKey: string): DayPlan {
     fixed.push(primary);
   }
   if (tier.slots === 3) {
-    tertiary = rosterAt(dayIndex, 13);
-    if (tertiary === primary) tertiary = rosterAt(dayIndex, 14);
-    fixed.push(tertiary);
+    for (let off = 13; off < 13 + PRIMARY_POOL.length; off++) {
+      const t = rosterAt(dayIndex, off);
+      if (t !== primary && !(primary && clashes(primary, t))) {
+        tertiary = t;
+        break;
+      }
+    }
+    if (tertiary) fixed.push(tertiary);
   }
 
   // Keep neighbouring days fresh: avoid yesterday's and tomorrow's primaries.
@@ -82,8 +91,9 @@ export function dayPlan(dateKey: string): DayPlan {
   avoid.add(rosterAt(dayIndex + 1));
 
   const hostPresent = fixed.some((m) => MUTATIONS.PAYLOAD_MASS.hosts?.includes(m));
+  const clash = (m: MutationId): boolean => fixed.some((f) => clashes(f, m));
   const pool = ALL_MUTATIONS.filter(
-    (m) => !avoid.has(m) && (m !== 'PAYLOAD_MASS' || hostPresent) && !(tier.slots === 1 && m === 'PAYLOAD_MASS')
+    (m) => !avoid.has(m) && !clash(m) && (m !== 'PAYLOAD_MASS' || hostPresent) && !(tier.slots === 1 && m === 'PAYLOAD_MASS')
   );
   const rng = new SeededRng(`mutator:candidates:${dateKey}`);
   let candidates = rng.shuffle(pool).slice(0, 3);

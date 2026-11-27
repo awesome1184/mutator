@@ -34,7 +34,10 @@ export type MutationId =
   | 'INERTIA'
   | 'FLOOD'
   | 'PHASE_LAYERS'
-  | 'ROTORS';
+  | 'ROTORS'
+  | 'WRAPAROUND'
+  | 'SKITTISH_CELLS'
+  | 'CRATES';
 
 export type DirTile = Coord & { dir: Dir };
 export type RotTile = Coord & { rot: 1 | -1 };
@@ -81,6 +84,8 @@ export type Puzzle = {
   vents: DirTile[];
   phaseTiles: LayerTile[];
   rotors: RotTile[];
+  /** Pushable crates (Crates). Optional for puzzles stored before crates existed. */
+  crates?: Coord[];
   droneStart: Coord | null;
   echoStart: Coord | null;
   beam: PulseBeam | null;
@@ -112,6 +117,10 @@ export type GameState = {
   doorsOpen: boolean;
   /** Bitmask of collected cells (1 = cell A, 2 = cell B). */
   got: number;
+  /** Current cell positions (they only move with Skittish Cells). */
+  cells: number[];
+  /** Crate positions, sorted (Crates). */
+  crates: number[];
   /** -1 untouched, 0 collapsed pit, >0 turns until collapse. */
   decay: Int8Array;
   /** 1 = infected by blight. */
@@ -140,6 +149,9 @@ export type StepEvent =
   | { t: 'echo'; from: number; to: number }
   | { t: 'drone'; from: number; to: number }
   | { t: 'orbit'; index: number; from: number; to: number }
+  | { t: 'flee'; index: number; from: number; to: number }
+  | { t: 'crate'; from: number; to: number }
+  | { t: 'wrap'; from: number; to: number }
   | { t: 'after'; at: number }
   | { t: 'collapse'; at: number }
   | { t: 'blight'; at: number }

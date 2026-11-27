@@ -47,6 +47,14 @@ export function stepIdx(i: number, d: Dir): number {
   return inBounds(r, c) ? idx(r, c) : -1;
 }
 
+/** Neighbour in direction d, wrapping around the board edges. */
+export function wrapIdx(i: number, d: Dir): number {
+  if (i < 0) return -1;
+  const r = (rowOf(i) + DR[d] + N) % N;
+  const c = (colOf(i) + DC[d] + N) % N;
+  return idx(r, c);
+}
+
 export function rotateDir(d: Dir, quarterTurns: number): Dir {
   const k = DIRS.indexOf(d);
   return DIRS[(((k + quarterTurns) % 4) + 4) % 4] as Dir;
