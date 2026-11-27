@@ -8,7 +8,7 @@ import type { ArchiveEntry, LeaderboardResponse, Result, StateResponse, SubmitRe
 import { padNumber, prettyDate } from '../shared/engine/date.ts';
 import { previewActions } from '../shared/engine/forecast.ts';
 import { parseActions } from '../shared/engine/grid.ts';
-import { MUTATIONS } from '../shared/engine/mutations.ts';
+import { ALL_MUTATIONS, MUTATIONS } from '../shared/engine/mutations.ts';
 import { TIERS } from '../shared/engine/schedule.ts';
 import type { Action, MutationId, Puzzle, StepEvent } from '../shared/engine/types.ts';
 import { shareText } from '../shared/scoring.ts';
@@ -453,6 +453,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
       {sheet === 'past' && (
         <Sheet title="Past puzzles" onClose={() => setSheet(null)}>
           <ArchivePanel days={past} current={data.date} onOpen={openDay} />
+          {STANDALONE && <BenchPicker current={puzzle.mutations} />}
         </Sheet>
       )}
       {sheet === 'result' && shownResult && (
@@ -482,6 +483,45 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
       )}
       <Toasts />
     </main>
+  );
+}
+
+/** Offline only: load a scratch board with any mix of mutations. */
+function BenchPicker({ current }: { current: MutationId[] }) {
+  const [picked, setPicked] = useState<MutationId[]>(current);
+  const toggle = (m: MutationId): void =>
+    setPicked((p) => (p.includes(m) ? p.filter((x) => x !== m) : p.length >= 3 ? p : [...p, m]));
+  const go = (q: string): void => {
+    window.location.search = q;
+  };
+  return (
+    <section className="bench">
+      <h3 className="rules-sub">Test bench</h3>
+      <p className="muted small">Pick up to three mutations for a scratch board. Results here are not saved.</p>
+      <div className="catalogue">
+        {ALL_MUTATIONS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={picked.includes(m) ? 'cat got' : 'cat'}
+            style={{ ['--mut' as string]: MUTATIONS[m].ink }}
+            onClick={() => toggle(m)}
+            aria-pressed={picked.includes(m)}
+          >
+            <MutationGlyph id={m} size={16} />
+            {MUTATIONS[m].name}
+          </button>
+        ))}
+      </div>
+      <div className="result-actions">
+        <button type="button" className="btn" disabled={picked.length === 0} onClick={() => go(`?muts=${picked.join(',')}`)}>
+          Load scratch board
+        </button>
+        <button type="button" className="btn ghost" onClick={() => go('')}>
+          Back to today
+        </button>
+      </div>
+    </section>
   );
 }
 

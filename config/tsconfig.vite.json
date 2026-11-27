@@ -10,7 +10,8 @@
   },
   "include": [
     "../vite.config.ts",
-    "../vite.standalone.config.ts"
+    "../vite.standalone.config.ts",
+    "../vite.offline.config.ts"
   ],
   "exclude": []
 }

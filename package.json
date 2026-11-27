@@ -15,7 +15,8 @@
     "type-check": "tsc --build",
     "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"tests/*.test.ts\"",
     "audit:days": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-days.ts",
-    "audit:pairs": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-pairs.ts"
+    "audit:pairs": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-pairs.ts",
+    "build:offline": "vite build --config vite.offline.config.ts && mv dist/offline/game.html dist/offline/mutator.html"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -36,6 +37,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "typescript": "6.0.3",
-    "vite": "8.3.7"
+    "vite": "8.3.7",
+    "vite-plugin-singlefile": "^2.3.4"
   }
 }

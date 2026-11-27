@@ -1937,3 +1937,17 @@ svg .plate {
     transition: none !important;
   }
 }
+
+.bench {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--plate-line);
+  padding-top: 12px;
+}
+
+button.cat {
+  border: 0;
+  cursor: pointer;
+  opacity: 0.85;
+}

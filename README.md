@@ -118,6 +118,10 @@ npm run dev:web          # standalone browser version on localhost
 npm run build:web        # standalone build to dist/web (used by GitHub Pages)
 ```
 
+For a single file you can open from disk with no server or internet, run
+`npm run build:offline`. It writes `dist/offline/mutator.html`. Its Past
+panel has a test bench for loading a scratch board with any mutations.
+
 The standalone version runs the same game service in the browser on
 localStorage, so you can play without Reddit. Add `?muts=GRAVITY,DECAY` to the
 URL to try any combination of mutations on a scratch board.
