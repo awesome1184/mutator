@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../dist/types/tests",
+    "tsBuildInfoFile": "../dist/types/tests/tsconfig.tsbuildinfo",
+    "types": [
+      "node"
+    ],
+    "rootDir": ".."
+  },
+  "include": [
+    "../tests/**/*",
+    "../tools/**/*"
+  ],
+  "exclude": [],
+  "references": [
+    {
+      "path": "./tsconfig.shared.json"
+    }
+  ]
+}
