@@ -867,7 +867,50 @@ export function replay(w: World, actions: readonly Action[]): Replay {
 }
 
 /** Deterministic fingerprint of a state (used by the solver and tests). */
-export function stateKey(w: World, s: GameState): string {
+const ACTION_CODE: Record<string, number> = { U: 1, R: 2, D: 3, L: 4, W: 5 };
+
+/**
+ * Whether every part of the state fits in one safe integer (52 bits) for this
+ * world. Number keys hash much faster than strings; search results are the same.
+ */
+const NUMERIC = new WeakMap<World, boolean>();
+
+function numericKeys(w: World): boolean {
+  let v = NUMERIC.get(w);
+  if (v === undefined) {
+    v = fitsNumber(w);
+    NUMERIC.set(w, v);
+  }
+  return v;
+}
+
+function fitsNumber(w: World): boolean {
+  if (w.has.DECAY || w.has.INFECTION || w.has.CRATES || w.has.SKITTISH_CELLS) return false;
+  if (w.keyAt.some((k) => k >= 4) || w.lockAt.some((k) => k >= 4)) return false;
+  const bits =
+    (w.timed ? 8 : 0) + 35 + (w.has.AFTERIMAGE ? 6 : 0) + (w.has.PAINT ? 2 : 0) + (w.has.KEYS ? 11 : 0) + (w.has.MUD ? 1 : 0);
+  return bits <= 52;
+}
+
+export function stateKey(w: World, s: GameState): string | number {
+  if (s.turn < 256 && numericKeys(w)) {
+    // Mixed-radix packing; each field has a fixed range.
+    let k = w.timed ? s.turn : 0; // 8 bits when timed
+    k = k * 64 + s.pos; // 6
+    k = k * 4 + s.got; // 2
+    k = k * 64 + (s.drone + 1); // 6
+    k = k * 64 + (s.echo + 1); // 6
+    k = k * 8 + (s.last ? (ACTION_CODE[s.last] as number) : 0); // 3
+    k = k * 8 + (s.inertia ? (ACTION_CODE[s.inertia] as number) : 0); // 3
+    k = k * 4 + (s.pendingRot + 1); // 2
+    k = k * 64 + (s.after + 1); // 6
+    k = k * 2 + (s.doorsOpen ? 1 : 0); // 1
+    if (w.has.AFTERIMAGE) k = k * 64 + (s.prevPos + 1); // 6
+    if (w.has.PAINT) k = k * 4 + s.paint; // 2
+    if (w.has.KEYS) k = ((k * 8 + s.keys) * 16 + s.keysTaken) * 16 + s.locksOpen; // 11
+    if (w.has.MUD) k = k * 2 + (s.stuck ? 1 : 0); // 1
+    return k;
+  }
   let k =
     (w.timed ? s.turn : 0) +
     ',' + s.pos + ',' + s.got + ',' + s.drone + ',' + s.echo + ',' + (s.last ?? '-') + (s.inertia ?? '-') +

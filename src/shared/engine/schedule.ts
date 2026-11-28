@@ -18,23 +18,20 @@ export type Tier = {
   par: [number, number];
   /** Extra random walls on top of the layout. */
   walls: [number, number];
-  /**
-   * How many moves over par a player who only looks a few moves ahead should
-   * end up (see difficulty.ts). Boards below this are treated as too easy.
-   */
-  gap: number;
+  /** Lowest difficulty score (see difficulty.ts) a board may have. */
+  difficulty: number;
   /** Early-week days also avoid boards far beyond that, so they stay approachable. */
-  maxGap?: number;
+  maxDifficulty?: number;
 };
 
 export const TIERS: Record<number, Tier> = {
-  1: { id: 'warmup', label: 'Warm-up', slots: 1, par: [6, 11], walls: [3, 6], gap: 1, maxGap: 5 },
-  2: { id: 'standard', label: 'Standard', slots: 2, par: [8, 13], walls: [2, 5], gap: 2, maxGap: 7 },
-  3: { id: 'tricky', label: 'Tricky', slots: 2, par: [9, 15], walls: [3, 6], gap: 3 },
-  4: { id: 'tricky', label: 'Tricky', slots: 2, par: [10, 16], walls: [3, 6], gap: 3 },
-  5: { id: 'hard', label: 'Hard', slots: 2, par: [11, 18], walls: [3, 7], gap: 4 },
-  6: { id: 'expert', label: 'Expert', slots: 2, par: [12, 22], walls: [4, 7], gap: 5 },
-  0: { id: 'anomaly', label: 'Anomaly', slots: 3, par: [10, 22], walls: [2, 5], gap: 4 }
+  1: { id: 'warmup', label: 'Warm-up', slots: 1, par: [6, 11], walls: [3, 6], difficulty: 3, maxDifficulty: 10 },
+  2: { id: 'standard', label: 'Standard', slots: 2, par: [8, 13], walls: [2, 5], difficulty: 5, maxDifficulty: 14 },
+  3: { id: 'tricky', label: 'Tricky', slots: 2, par: [9, 15], walls: [3, 6], difficulty: 7 },
+  4: { id: 'tricky', label: 'Tricky', slots: 2, par: [10, 16], walls: [3, 6], difficulty: 8 },
+  5: { id: 'hard', label: 'Hard', slots: 2, par: [11, 18], walls: [3, 7], difficulty: 9 },
+  6: { id: 'expert', label: 'Expert', slots: 2, par: [12, 22], walls: [4, 7], difficulty: 10 },
+  0: { id: 'anomaly', label: 'Anomaly', slots: 3, par: [10, 22], walls: [2, 5], difficulty: 9 }
 };
 
 /** PAYLOAD_MASS only matters next to a force, so it is never a primary. */

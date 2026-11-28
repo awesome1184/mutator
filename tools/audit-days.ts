@@ -34,7 +34,7 @@ for (let i = 0; i < days; i++) {
   if (ok) inRange++;
   if (rep.hard) hard++;
   console.log(
-    `${d} ${p.tier.padEnd(8)} ${p.mutations.join('+').padEnd(42)} par ${String(p.par).padStart(2)} [${lo}-${hi}] ${rep.relevant ? 'relevant' : '--------'} gap ${rep.gap >= 99 ? 'stuck' : String(rep.gap).padStart(5)}/${dayPlan(d).tier.gap} ${rep.hard ? '    ' : 'EASY'} ${rep.fallback ? 'FALLBACK' : ''} ${ms.toFixed(0).padStart(5)}ms`
+    `${d} ${p.tier.padEnd(8)} ${p.mutations.join('+').padEnd(42)} par ${String(p.par).padStart(2)} [${lo}-${hi}] ${rep.relevant ? 'relevant' : '--------'} difficulty ${String(rep.difficulty).padStart(2)}/${dayPlan(d).tier.difficulty} ${rep.hard ? '    ' : 'EASY'} ${rep.fallback ? 'FALLBACK' : ''} ${ms.toFixed(0).padStart(5)}ms`
   );
   d = addDays(d, 1);
 }

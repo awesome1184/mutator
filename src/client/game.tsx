@@ -359,7 +359,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
     <main className="app">
       <header className="top">
         <div className="brand">
-          <Wordmark number={puzzle.number} ink={MUTATIONS[puzzle.mutations[0] ?? 'GRAVITY'].ink} />
+          <Wordmark weekday={puzzle.weekday} ink={MUTATIONS[puzzle.mutations[0] ?? 'GRAVITY'].ink} />
           <p className="issue">
             <span className="issue-no">#{padNumber(puzzle.number)}</span>
             <span className="issue-date">{prettyDate(puzzle.dateKey)}</span>

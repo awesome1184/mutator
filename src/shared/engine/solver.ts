@@ -24,7 +24,7 @@ export function solve(w: World, opts: { maxDepth?: number; maxStates?: number; f
   const states: GameState[] = [start];
   const parent: number[] = [-1];
   const via: Action[] = ['W'];
-  const seen = new Set<string>([stateKey(w, start)]);
+  const seen = new Set<string | number>([stateKey(w, start)]);
   let head = 0;
 
   while (head < states.length) {

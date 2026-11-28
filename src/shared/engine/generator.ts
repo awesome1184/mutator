@@ -10,7 +10,7 @@ import { ALL_MUTATIONS, MUTATIONS } from './mutations.ts';
 import { SeededRng } from './rng.ts';
 import { dayPlan, mutationsFor, type DayPlan, type Tier } from './schedule.ts';
 import { initialState, replay } from './sim.ts';
-import { naiveBest, naivePath, STUCK_GAP } from './difficulty.ts';
+import { difficultyScore, naiveBest, naivePath } from './difficulty.ts';
 import { solve } from './solver.ts';
 import { RULES_VERSION } from './grid.ts';
 import type { Coord, Dir, MutationId, Puzzle, StepEvent } from './types.ts';
@@ -643,9 +643,9 @@ type Scored = {
   inRange: boolean;
   relevant: boolean;
   hard: boolean;
-  /** How far over par the best naive player ends up. */
-  gap: number;
-  /** The same for all three naive players added up: a finer signal for climbing. */
+  /** Difficulty score against the reference players (difficulty.ts). */
+  difficulty: number;
+  /** How far over par every reference player ends up, added up: a finer signal for climbing. */
   slack: number;
   decayFlat: boolean;
 };
@@ -752,7 +752,11 @@ function evaluate(p: Puzzle, tier: Tier, budget: Budget, best: Scored | null, cl
   // only has to look that deep to find out.
   const naive = naiveBest(w, initialState(w), hi + 14);
   budget.left -= naive.work;
-  const hardDepth = Math.min(hi, naive.moves === null ? hi : naive.moves - tier.gap);
+  // Any difficulty at all needs some player to miss par, so par must sit
+  // below the furthest of: the best greedy score, and each planner's.
+  const greedyBest = naive.each.slice(0, 3).reduce<number>((m, n) => Math.min(m, n ?? Infinity), Infinity);
+  const furthest = Math.max(greedyBest, naive.each[3] ?? Infinity, naive.each[4] ?? Infinity);
+  const hardDepth = Math.min(hi, furthest - 1);
   let res = hardDepth >= lo ? solve(w, { maxDepth: hardDepth, maxStates: Math.min(45000, budget.left) }) : null;
   if (res) budget.left -= res.explored;
   if (!res || !res.solvable) {
@@ -766,9 +770,9 @@ function evaluate(p: Puzzle, tier: Tier, budget: Budget, best: Scored | null, cl
   p.par = res.par;
   p.solution = res.path.join('');
   const inRange = res.par >= lo && res.par <= hi;
-  const gap = naive.moves === null ? STUCK_GAP : Math.max(0, naive.moves - res.par);
-  const hard = gap >= tier.gap;
   const par = res.par;
+  const difficulty = difficultyScore(naive.each, par);
+  const hard = difficulty >= tier.difficulty;
   const slack = naive.each.reduce<number>((sum, n) => sum + (n === null ? 15 : Math.min(15, n - par)), 0);
 
   const trace = replay(w, res.path);
@@ -810,16 +814,16 @@ function evaluate(p: Puzzle, tier: Tier, budget: Budget, best: Scored | null, cl
   const target = (lo + hi) / 2;
   // In order: par in range, every mutation matters, hard enough, then a
   // bigger gap (up to a point) and a par near the middle of the range.
-  const tooHard = tier.maxGap !== undefined && gap > tier.maxGap;
+  const tooHard = tier.maxDifficulty !== undefined && difficulty > tier.maxDifficulty;
   const score =
     (inRange ? 400 : 0) +
     (relevant ? 200 : 0) +
     (hard ? 100 : 0) -
     (tooHard ? 60 : 0) +
-    Math.min(gap, tier.gap + 2) * 12 -
+    Math.min(difficulty, tier.difficulty + 3) * 8 -
     Math.abs(res.par - target) * 2 +
     kinds.size;
-  return { puzzle: p, score, inRange, relevant, hard, gap, slack, decayFlat };
+  return { puzzle: p, score, inRange, relevant, hard, difficulty, slack, decayFlat };
 }
 
 // ------------------------------------------------------------------ climbing
@@ -925,8 +929,8 @@ function perturb(src: Puzzle, rng: SeededRng, path: readonly number[]): Puzzle |
 
 /** Lexicographic progress while climbing: in range, hard and relevant, gap, par near the middle. */
 function climbKey(s: Scored, tier: Tier, target: number): number[] {
-  const over = tier.maxGap !== undefined && s.gap > tier.maxGap ? 1 : 0;
-  return [s.inRange ? 1 : 0, s.hard && s.relevant ? 1 : 0, -over, Math.min(s.gap, tier.gap + 2), s.slack, -Math.abs(s.puzzle.par - target)];
+  const over = tier.maxDifficulty !== undefined && s.difficulty > tier.maxDifficulty ? 1 : 0;
+  return [s.inRange ? 1 : 0, s.hard && s.relevant ? 1 : 0, -over, Math.min(s.difficulty, tier.difficulty + 3), s.slack, -Math.abs(s.puzzle.par - target)];
 }
 
 function compareKeys(a: number[], b: number[]): number {
@@ -1059,7 +1063,7 @@ export type GenerateOptions = {
   stateBudget?: number;
 };
 
-export type GenerateReport = { puzzle: Puzzle; relevant: boolean; hard: boolean; gap: number; fallback: boolean; attempts: number; statesUsed: number };
+export type GenerateReport = { puzzle: Puzzle; relevant: boolean; hard: boolean; difficulty: number; fallback: boolean; attempts: number; statesUsed: number };
 
 export function generatePuzzle(dateKey: string, opts: GenerateOptions = {}): Puzzle {
   return generateWithReport(dateKey, opts).puzzle;
@@ -1097,7 +1101,8 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
   const found: Scored[] = [];
   let acceptedCount = 0;
   let attempt = 0;
-  for (; attempt < maxAttempts && budget.left > 0; attempt++) {
+  // The search stops with some budget left over for climbing.
+  for (; attempt < maxAttempts && budget.left > startBudget * 0.45; attempt++) {
     const board = buildBoard(dateKey, plan, mutations, communityPick, seed, attempt);
     if (!board) continue;
     if (mutations.includes('DECAY') && !placeCracks(board, plan.tier, new SeededRng(`${seed}:cracks:${attempt}`), budget)) continue;
@@ -1115,8 +1120,6 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
       // search is getting expensive.
       if (acceptedCount >= 2 || budget.left < startBudget * 0.5) break;
     }
-    // Keep some budget back for climbing.
-    if (budget.left < startBudget * 0.45) break;
   }
   if (best && !(best.relevant && best.hard && best.inRange)) {
     // Climb from the three most promising boards, sharing what's left.
@@ -1139,14 +1142,14 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
   }
   const used = startBudget - budget.left;
   if (best && best.puzzle.par >= 4) {
-    return { puzzle: best.puzzle, relevant: best.relevant, hard: best.hard, gap: best.gap, fallback: false, attempts: attempt, statesUsed: used };
+    return { puzzle: best.puzzle, relevant: best.relevant, hard: best.hard, difficulty: best.difficulty, fallback: false, attempts: attempt, statesUsed: used };
   }
 
   const fb = fallbackPuzzle(dateKey, plan, mutations, communityPick, seed);
   const res = solve(compileWorld(fb), { maxDepth: 40, maxStates: 120000 });
   fb.par = res.solvable ? res.par : 0;
   fb.solution = res.path.join('');
-  return { puzzle: fb, relevant: false, hard: false, gap: 0, fallback: true, attempts: attempt, statesUsed: used };
+  return { puzzle: fb, relevant: false, hard: false, difficulty: 0, fallback: true, attempts: attempt, statesUsed: used };
 }
 
 /** Strip the answer before sending a puzzle to someone who has not solved it. */

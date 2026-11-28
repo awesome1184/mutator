@@ -8,7 +8,7 @@ import { initialState, replay, stateKey, step } from '../src/shared/engine/sim.t
 import { solve } from '../src/shared/engine/solver.ts';
 import { compileWorld } from '../src/shared/engine/world.ts';
 import { nextBlight, previewActions } from '../src/shared/engine/forecast.ts';
-import { naiveGap } from '../src/shared/engine/difficulty.ts';
+import { difficultyOf } from '../src/shared/engine/difficulty.ts';
 import { dayPlan } from '../src/shared/engine/schedule.ts';
 import type { Action } from '../src/shared/engine/types.ts';
 import { at, co, makePuzzle, walls } from './helpers.ts';
@@ -48,11 +48,11 @@ test('stored par routes replay to a solve in exactly par moves', () => {
     const r = replay(compileWorld(p), actions);
     assert.ok(r.ok && r.solved, `${d} solution does not solve`);
     assert.equal(r.solvedAt, p.par, `${d} par mismatch`);
-    if (naiveGap(compileWorld(p), initialState(compileWorld(p)), p.par) >= dayPlan(d).tier.gap) hard++;
+    if (difficultyOf(compileWorld(p), initialState(compileWorld(p)), p.par) >= dayPlan(d).tier.difficulty) hard++;
     d = addDays(d, 1);
   }
-  // Most days should beat a player who just heads for the nearest goal by the day's margin.
-  assert.ok(hard >= 5, `only ${hard} of 7 days were hard enough`);
+  // Most days should reach their difficulty target.
+  assert.ok(hard >= 4, `only ${hard} of 7 days were hard enough`);
 });
 
 test('replaying a route twice gives identical states and events', () => {

@@ -106,7 +106,7 @@ function Splash() {
   return (
     <main className="splash">
       <header className="sp-head">
-        {p ? <Wordmark number={p.number} ink={MUTATIONS[p.mutations[0] ?? 'GRAVITY'].ink} /> : <h1 className="wordmark">MUTATOR</h1>}
+        {p ? <Wordmark weekday={p.weekday} ink={MUTATIONS[p.mutations[0] ?? 'GRAVITY'].ink} /> : <h1 className="wordmark">MUTATOR</h1>}
         {p && (
           <p className="issue">
             <span className="issue-no">#{padNumber(p.number)}</span>

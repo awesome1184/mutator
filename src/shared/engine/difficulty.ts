@@ -9,9 +9,10 @@
 // portals they can see are used as shortcuts. Everything else is treated as
 // plain floor. They never return to a state they have already been in.
 //
-// If that player can match par, the board is easy whatever its mutations are.
-// The gap between their score and par is what the generator uses to judge
-// difficulty.
+// Two planners do the same but keep the 4 or 12 most promising lines going at
+// once. If these players can match par, the board is easy to figure out
+// whatever its mutations are. difficultyScore turns how far over par each one
+// ends up into the number the generator aims for.
 import { ACTIONS, CELLS, DIRS, stepIdx, wrapIdx } from './grid.ts';
 import { cellAt, step, stateKey } from './sim.ts';
 import type { GameState } from './types.ts';
@@ -21,9 +22,7 @@ const FAR = 60;
 /** Steps and walk measurements done so far, so callers can charge them to a budget. */
 let work = 0;
 /** walkLeft results for the current naiveBest call, keyed by state. */
-let memo = new Map<string, number>();
-/** Gap reported when the naive player never finishes. */
-export const STUCK_GAP = 99;
+let memo = new Map<string | number, number>();
 
 type Walk = { solid: Uint8Array; L: Layer; mode: 0 | 1 };
 
@@ -55,21 +54,30 @@ function settle(w: World, m: Walk, j: number): number {
   return j;
 }
 
+const QUEUE = new Int16Array(CELLS * 4);
+
 function distances(w: World, m: Walk, from: number): Int16Array {
   const d = new Int16Array(CELLS).fill(FAR);
   d[from] = 0;
-  const q = [from];
+  QUEUE[0] = from;
+  let tail = 1;
   const wrap = w.has.WRAPAROUND === true;
-  for (let h = 0; h < q.length; h++) {
-    const i = q[h] as number;
-    for (const dir of DIRS) {
+  for (let h = 0; h < tail; h++) {
+    const i = QUEUE[h] as number;
+    const next = (d[i] as number) + 1;
+    for (let k = 0; k < 4; k++) {
+      const dir = DIRS[k] as (typeof DIRS)[number];
       const j = wrap ? wrapIdx(i, dir) : stepIdx(i, dir);
       if (j < 0 || m.solid[j]) continue;
       // You can still collect something you are carried across, so record both tiles.
-      for (const k of j === settle(w, m, j) ? [j] : [j, settle(w, m, j)]) {
-        if ((d[k] as number) <= (d[i] as number) + 1) continue;
-        d[k] = (d[i] as number) + 1;
-        q.push(k);
+      if ((d[j] as number) > next) {
+        d[j] = next;
+        QUEUE[tail++] = j;
+      }
+      const to = settle(w, m, j);
+      if (to !== j && (d[to] as number) > next) {
+        d[to] = next;
+        QUEUE[tail++] = to;
       }
     }
   }
@@ -156,7 +164,7 @@ function lookahead(w: World, s: GameState, depth: number): number {
  */
 export function naiveMoves(w: World, start: GameState, look: number, cap: number, trail?: number[]): number | null {
   let s = start;
-  const visited = new Set<string>([stateKey(w, s)]);
+  const visited = new Set<string | number>([stateKey(w, s)]);
   while (s.turn < cap) {
     let best: GameState | null = null;
     let bestScore = Infinity;
@@ -181,6 +189,39 @@ export function naiveMoves(w: World, start: GameState, look: number, cap: number
 }
 
 /**
+ * A player who keeps the `width` most promising lines of play going at once
+ * (judged by moves made plus walk left) instead of committing to one. Closer
+ * to how a person weighs a few plans. Returns moves to solve, or null.
+ */
+export function beamMoves(w: World, start: GameState, width: number, cap: number): number | null {
+  let layer: GameState[] = [start];
+  const seen = new Set<string | number>([stateKey(w, start)]);
+  while ((layer[0] as GameState).turn < cap) {
+    const next: { s: GameState; h: number }[] = [];
+    for (const s of layer) {
+      for (const a of ACTIONS) {
+        const r = step(w, s, a);
+        work++;
+        if (!r.ok) continue;
+        if (r.state.solved) return r.state.turn;
+        const key = stateKey(w, r.state);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        next.push({ s: r.state, h: walkLeft(w, r.state) + (a === 'W' ? 0.5 : 0) });
+      }
+    }
+    if (next.length === 0) return null;
+    // A stable sort keeps ties in a fixed order.
+    next.sort((x, y) => x.h - y.h);
+    layer = next.slice(0, width).map((x) => x.s);
+  }
+  return null;
+}
+
+/** The reference players: greedy with 1, 2 and 3 moves of lookahead, then beams 4 and 12 wide. */
+export const PLAYERS = 5;
+
+/**
  * How the naive player does with 1, 2 and 3 moves of lookahead (`each`, null
  * where they get stuck or pass `cap`), and the best of those (`moves`).
  * `work` is a rough count of the effort spent, comparable to solver states.
@@ -188,32 +229,43 @@ export function naiveMoves(w: World, start: GameState, look: number, cap: number
 export function naiveBest(w: World, start: GameState, cap: number): { moves: number | null; each: (number | null)[]; work: number } {
   work = 0;
   memo = new Map();
-  const each = [1, 2, 3].map((look) => naiveMoves(w, start, look, cap));
+  const each = [...[1, 2, 3].map((look) => naiveMoves(w, start, look, cap)), ...[4, 12].map((width) => beamMoves(w, start, width, cap))];
   memo = new Map();
   const done = each.filter((n): n is number => n !== null);
   return { moves: done.length ? Math.min(...done) : null, each, work: Math.ceil(work * 1.5) };
 }
 
-/** The tiles the best naive player stands on, in order. */
+/** The tiles the best greedy player stands on, in order (their whole route if they get stuck). */
 export function naivePath(w: World, start: GameState, cap: number): number[] {
-  const { each } = naiveBest(w, start, cap);
-  let look = 1;
-  let best = Infinity;
-  each.forEach((n, k) => {
-    if (n !== null && n < best) {
-      best = n;
-      look = k + 1;
+  memo = new Map();
+  let best: number[] = [];
+  let bestMoves = Infinity;
+  for (const look of [1, 2, 3]) {
+    const trail: number[] = [];
+    const n = naiveMoves(w, start, look, cap, trail) ?? cap + 1;
+    if (n < bestMoves) {
+      bestMoves = n;
+      best = trail;
     }
-  });
-  const trail: number[] = [];
+  }
   memo = new Map();
-  naiveMoves(w, start, look, cap, trail);
-  memo = new Map();
-  return trail;
+  return best;
 }
 
-/** How many moves over par the naive player ends up. */
-export function naiveGap(w: World, start: GameState, par: number): number {
-  const { moves } = naiveBest(w, start, par + 14);
-  return moves === null ? STUCK_GAP : Math.max(0, moves - par);
+/**
+ * One number for how hard a board is to figure out, from how far over par
+ * each reference player ends up: the best greedy player counts once (up to
+ * 6), the 4-wide planner twice and the 12-wide planner three times (each up
+ * to 4). 0 means a greedy walk finds par; above 10 or so, planning a few
+ * lines ahead doesn't find it either.
+ */
+export function difficultyScore(each: readonly (number | null)[], par: number): number {
+  const over = (n: number | null | undefined, cap: number): number => (n === null || n === undefined ? cap : Math.min(cap, Math.max(0, n - par)));
+  const greedy = Math.min(over(each[0], 6), over(each[1], 6), over(each[2], 6));
+  return greedy + 2 * over(each[3], 4) + 3 * over(each[4], 4);
+}
+
+/** The difficulty score of a board whose par is known. */
+export function difficultyOf(w: World, start: GameState, par: number): number {
+  return difficultyScore(naiveBest(w, start, par + 14).each, par);
 }
