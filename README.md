@@ -168,7 +168,10 @@ For a single file you can open from disk with no server or internet, run
 panel has a test bench for loading a scratch board with any mutations.
 
 The standalone version runs the same game service in the browser on
-localStorage, so you can play without Reddit. Add `?muts=GRAVITY,DECAY` to the
+localStorage, so you can play without Reddit. It has a **Next day** button
+next to the date that moves its clock forward a day, so you can test the next
+puzzle, the vote result and streaks without waiting. The "days ahead, reset"
+button next to it goes back to the real date. Neither appears on Reddit. Add `?muts=GRAVITY,DECAY` to the
 URL to try any combination of mutations on a scratch board.
 
 ### On Reddit

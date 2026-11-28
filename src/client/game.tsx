@@ -12,7 +12,7 @@ import { ALL_MUTATIONS, MUTATIONS } from '../shared/engine/mutations.ts';
 import { TIERS } from '../shared/engine/schedule.ts';
 import type { Action, MutationId, Puzzle, StepEvent } from '../shared/engine/types.ts';
 import { shareText } from '../shared/scoring.ts';
-import { getApi, STANDALONE } from './lib/api.ts';
+import { dayOffset, getApi, jumpToDay, STANDALONE } from './lib/api.ts';
 import { play, isMuted, setMuted } from './lib/sound.ts';
 import { load, save } from './lib/storage.ts';
 import { Board, PAINT_INK } from './game/Board.tsx';
@@ -350,6 +350,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
             <span className="issue-no">#{padNumber(puzzle.number)}</span>
             <span className="issue-date">{prettyDate(puzzle.dateKey)}</span>
             {tier && <span className={`tier tier-${tier.id}`}>{tier.label}</span>}
+            {STANDALONE && <NextDay />}
           </p>
         </div>
         <nav className="top-nav" aria-label="Menu">
@@ -539,6 +540,23 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
       )}
       <Toasts />
     </main>
+  );
+}
+
+/** Standalone only: move the clock on a day to test the next puzzle, votes and streaks. */
+function NextDay() {
+  const ahead = dayOffset();
+  return (
+    <span className="test-day">
+      <button type="button" className="test-btn" onClick={() => jumpToDay(ahead + 1)} title="Testing: move the clock to the next day">
+        Next day
+      </button>
+      {ahead > 0 && (
+        <button type="button" className="test-btn quiet" onClick={() => jumpToDay(0)} title="Testing: back to the real date">
+          {ahead === 1 ? '1 day ahead' : `${ahead} days ahead`}, reset
+        </button>
+      )}
+    </span>
   );
 }
 

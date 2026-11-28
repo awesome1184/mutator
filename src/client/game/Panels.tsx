@@ -8,6 +8,7 @@ import { courierWaypoints } from '../../shared/engine/forecast.ts';
 import { colOf, parseActions, rowOf, toIdx } from '../../shared/engine/grid.ts';
 import { replay } from '../../shared/engine/sim.ts';
 import { compileWorld } from '../../shared/engine/world.ts';
+import { clientNow } from '../lib/api.ts';
 import { MutationGlyph } from './icons.tsx';
 
 export function Stars({ n, size = 22 }: { n: number; size?: number }) {
@@ -23,9 +24,9 @@ export function Stars({ n, size = 22 }: { n: number; size?: number }) {
 }
 
 export function Countdown({ at }: { at: number }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(clientNow());
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    const t = window.setInterval(() => setNow(clientNow()), 30_000);
     return () => window.clearInterval(t);
   }, []);
   const ms = Math.max(0, at - now);

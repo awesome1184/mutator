@@ -59,6 +59,34 @@ const remote: Api = {
 
 let localApi: Promise<Api> | null = null;
 
+// Testing aid for the standalone build: pretend it is some days later.
+const OFFSET_KEY = 'mutator-day-offset';
+
+export function dayOffset(): number {
+  if (!STANDALONE) return 0;
+  try {
+    return Math.max(0, Number(localStorage.getItem(OFFSET_KEY) ?? 0) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** Jump the standalone build's clock to `days` after the real date (0 = back to real time) and reload. */
+export function jumpToDay(days: number): void {
+  try {
+    if (days > 0) localStorage.setItem(OFFSET_KEY, String(days));
+    else localStorage.removeItem(OFFSET_KEY);
+  } catch {
+    // storage blocked: nothing to remember
+  }
+  window.location.replace(window.location.pathname);
+}
+
+/** The clock the game runs on: real time, plus any test offset. */
+export function clientNow(): number {
+  return Date.now() + dayOffset() * 86_400_000;
+}
+
 async function makeLocal(): Promise<Api> {
   const [{ createMemoryKv }, svc, { publicPuzzle }, scoring] = await Promise.all([
     import('../../shared/memoryKv.ts'),
@@ -85,7 +113,7 @@ async function makeLocal(): Promise<Api> {
       }
     }, 150);
   });
-  const env = { kv, now: () => Date.now(), user: { name: 'you', avatar: null } };
+  const env = { kv, now: clientNow, user: { name: 'you', avatar: null } };
 
   // Test bench: ?muts=GRAVITY,DECAY loads a scratch puzzle with those mutations.
   const benchMuts = new URLSearchParams(window.location.search).get('muts');
@@ -93,9 +121,9 @@ async function makeLocal(): Promise<Api> {
     const { generatePuzzle } = await import('../../shared/engine/generator.ts');
     const { todayKey } = await import('../../shared/engine/date.ts');
     const muts = benchMuts.split(',') as Puzzle['mutations'];
-    const puzzle = generatePuzzle(todayKey(), { mutations: muts });
+    const puzzle = generatePuzzle(todayKey(clientNow()), { mutations: muts });
     const scratch = createMemoryKv();
-    const benchEnv = { kv: scratch, now: () => Date.now(), user: { name: 'you', avatar: null } };
+    const benchEnv = { kv: scratch, now: clientNow, user: { name: 'you', avatar: null } };
     await scratch.set(`puzzle:v${puzzle.v}:${puzzle.dateKey}`, JSON.stringify(puzzle));
     return {
       state: (d) => svc.getState(benchEnv, d),
