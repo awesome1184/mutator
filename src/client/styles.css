@@ -350,9 +350,7 @@ p {
   padding: 2.4%;
 }
 
-.plate.shake {
-  animation: shake 0.2s linear;
-}
+
 
 @keyframes shake {
   25% {
@@ -437,7 +435,13 @@ p {
 
 /* tile art */
 .well {
-  fill: #e9ecf7;
+  fill: #e6e9f6;
+}
+.well-lip {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 4;
+  stroke-linecap: round;
 }
 .well.ice {
   fill: #cdeff8;
@@ -450,6 +454,9 @@ p {
 }
 .wall {
   fill: var(--ink);
+}
+.wall-base {
+  fill: #0f0e2c;
 }
 .wall-shine {
   stroke: rgba(255, 255, 255, 0.16);
@@ -1959,7 +1966,7 @@ p {
   }
   .mini-plate {
     height: auto;
-    width: 46%;
+    width: 58%;
     align-self: center;
   }
 }
@@ -2075,10 +2082,13 @@ button.cat {
 .gravity-hint svg {
   overflow: visible;
 }
+.gravity-hint {
+  pointer-events: none;
+}
 .gravity-hint path {
   fill: none;
   stroke: #1f6fd1;
-  stroke-width: 8;
+  stroke-width: 5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2091,4 +2101,227 @@ button.cat {
 .filled path {
   stroke: #8a5523;
   stroke-width: 3;
+}
+
+/* ---------------------------------------------------------------- feel */
+
+.wordmark span {
+  display: inline-block;
+}
+.wordmark .mutated {
+  transform-origin: 50% 70%;
+}
+
+.par-track {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  align-self: center;
+}
+.pip {
+  width: 5px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.pip.done {
+  background: var(--on-bench);
+}
+.pip.over {
+  background: rgba(255, 90, 31, 0.35);
+}
+.pip.over.done {
+  background: var(--courier);
+}
+.pip.par {
+  box-shadow: 3px 0 0 -1px var(--bench), 5px 0 0 -1px var(--cell);
+  margin-right: 4px;
+}
+
+.top-nav .icon-btn {
+  opacity: 0.65;
+}
+.top-nav .icon-btn.on,
+.top-nav .icon-btn:last-child {
+  opacity: 1;
+}
+
+.status .btn.small {
+  margin-left: auto;
+}
+
+.courier-inner {
+  width: 100%;
+  height: 100%;
+}
+.courier-inner > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.courier-inner.hop {
+  animation: hop 170ms ease-out;
+}
+@keyframes hop {
+  0% {
+    transform: scale(1.12, 0.86);
+  }
+  45% {
+    transform: scale(0.92, 1.1) translateY(-6%);
+  }
+  100% {
+    transform: none;
+  }
+}
+.courier-inner.nudge-U {
+  animation: nudge-u 190ms ease-out;
+}
+.courier-inner.nudge-D {
+  animation: nudge-d 190ms ease-out;
+}
+.courier-inner.nudge-L {
+  animation: nudge-l 190ms ease-out;
+}
+.courier-inner.nudge-R {
+  animation: nudge-r 190ms ease-out;
+}
+@keyframes nudge-u {
+  40% {
+    transform: translateY(-14%) scale(1.05, 0.92);
+  }
+}
+@keyframes nudge-d {
+  40% {
+    transform: translateY(14%) scale(1.05, 0.92);
+  }
+}
+@keyframes nudge-l {
+  40% {
+    transform: translateX(-14%) scale(0.92, 1.05);
+  }
+}
+@keyframes nudge-r {
+  40% {
+    transform: translateX(14%) scale(0.92, 1.05);
+  }
+}
+.courier.warping .courier-inner {
+  transform: scale(0.2);
+  transition: transform 80ms ease-in;
+}
+
+.burst {
+  z-index: 7;
+}
+.burst circle {
+  fill: none;
+  stroke: var(--cell);
+  stroke-width: 6;
+  transform-origin: 50% 50%;
+  animation: burst-ring 420ms ease-out forwards;
+}
+.burst path {
+  stroke: var(--cell);
+  stroke-width: 6;
+  stroke-linecap: round;
+  transform-box: view-box;
+  animation: burst-ray 420ms ease-out forwards;
+}
+@keyframes burst-ring {
+  from {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes burst-ray {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.tiles.win .cell-slot {
+  animation: ripple 520ms ease-out both;
+}
+@keyframes ripple {
+  0% {
+    transform: none;
+  }
+  35% {
+    transform: scale(0.86);
+    filter: brightness(1.08) saturate(1.4);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.spin-ring circle {
+  fill: none;
+  stroke-width: 5;
+  stroke-dasharray: 3 11;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+.spin-ring path {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.75;
+}
+.gear {
+  color: #fff;
+}
+
+.route-map {
+  width: 100%;
+  max-width: 220px;
+  align-self: center;
+}
+.route-map .rm-plate {
+  fill: var(--plate);
+  stroke: var(--plate-line);
+  stroke-width: 0.6;
+}
+.route-map .rm-wall {
+  fill: var(--ink);
+}
+.route-map .rm-well {
+  fill: var(--well);
+}
+.route-map .rm-path {
+  fill: none;
+  stroke: var(--courier);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-map .rm-jump {
+  fill: none;
+  stroke: var(--courier);
+  stroke-width: 1.4;
+  stroke-dasharray: 1.5 2.5;
+}
+.route-map .rm-start {
+  fill: var(--courier);
+}
+.route-map .rm-exit {
+  fill: var(--ink);
+}
+
+.mp-me-halo {
+  fill: #fff;
+}
+.mp-me-blob {
+  animation: none;
+}
+.gravity-hint svg {
+  transform-origin: 50% 50%;
 }

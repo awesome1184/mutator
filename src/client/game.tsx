@@ -16,6 +16,7 @@ import { getApi, STANDALONE } from './lib/api.ts';
 import { play, isMuted, setMuted } from './lib/sound.ts';
 import { load, save } from './lib/storage.ts';
 import { Board } from './game/Board.tsx';
+import { Wordmark } from './game/Wordmark.tsx';
 import { Controls } from './game/Controls.tsx';
 import { Forecast } from './game/Forecast.tsx';
 import { MutationGlyph, SoundGlyph } from './game/icons.tsx';
@@ -31,6 +32,34 @@ function requestedDate(): string | undefined {
   if (typeof fromPost === 'string') return fromPost;
   const q = new URLSearchParams(window.location.search).get('date');
   return q ?? undefined;
+}
+
+function buzz(pattern: number | number[]): void {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    // not supported
+  }
+}
+
+function ParTrack({ moves, par }: { moves: number; par: number }) {
+  const n = Math.max(par, moves);
+  return (
+    <span className="par-track" aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => (
+        <span key={i} className={`pip${i < moves ? ' done' : ''}${i >= par ? ' over' : ''}${i === par - 1 ? ' par' : ''}`} />
+      ))}
+    </span>
+  );
+}
+
+function RingsGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3.5 2.5" />
+      <path d="M12 16V8M8.5 11.5L12 8l3.5 3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function soundFor(events: StepEvent[]): void {
@@ -160,8 +189,14 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
     (a: Action) => {
       if (state.solved || replaying || sheet) return;
       const res = game.move(a);
-      if (!res.ok) play('bump');
-      else soundFor(res.events);
+      if (!res.ok) {
+        play('bump');
+        buzz(12);
+      } else {
+        soundFor(res.events);
+        if (res.events.some((e) => e.t === 'solved')) buzz([20, 40, 20, 40, 60]);
+        else if (res.events.some((e) => e.t === 'collect')) buzz([10, 30, 10]);
+      }
       if (!hintSeen && res.ok) {
         setHintSeen(true);
         save('mutator-hint-seen', true);
@@ -309,7 +344,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
     <main className="app">
       <header className="top">
         <div className="brand">
-          <h1 className="wordmark">MUTATOR</h1>
+          <Wordmark number={puzzle.number} ink={MUTATIONS[puzzle.mutations[0] ?? 'GRAVITY'].ink} />
           <p className="issue">
             <span className="issue-no">#{padNumber(puzzle.number)}</span>
             <span className="issue-date">{prettyDate(puzzle.dateKey)}</span>
@@ -328,6 +363,19 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           </button>
           <button type="button" onClick={() => setSheet('past')}>
             Past
+          </button>
+          <button
+            type="button"
+            className={`icon-btn${showLandings ? ' on' : ''}`}
+            aria-label={showLandings ? 'Hide landing rings' : 'Show landing rings'}
+            aria-pressed={showLandings}
+            title="Landing rings"
+            onClick={() => {
+              setShowLandings(!showLandings);
+              save('mutator-landings', !showLandings);
+            }}
+          >
+            <RingsGlyph />
           </button>
           <button
             type="button"
@@ -370,6 +418,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           tick={run.tick}
           bumps={run.bumps}
           lastDir={state.last}
+          bumpDir={run.lastDir}
           previews={previews}
           showLandings={showLandings && !replaying}
           focus={focus}
@@ -385,6 +434,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
             <strong>{state.turn}</strong> {state.turn === 1 ? 'move' : 'moves'}
           </span>
           <span className="st-par">par {puzzle.par}</span>
+          <ParTrack moves={state.turn} par={puzzle.par} />
           <span className="st-cells" aria-label={`${cellsGot.filter(Boolean).length} of 2 cells`}>
             {cellsGot.map((g, k) => (
               <svg key={k} width="15" height="22" viewBox="0 0 15 22" aria-hidden="true">
@@ -392,10 +442,15 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
                 <rect x="1.5" y="3" width="12" height="18" rx="3" className={g ? 'cap got' : 'cap'} />
               </svg>
             ))}
-            <span>{state.got === 3 ? 'exit open' : state.got === 0 ? '2 cells to grab' : '1 cell to grab'}</span>
+            {state.got === 3 && <span>exit open</span>}
           </span>
           {practice && <span className="st-mode">{replaying ? 'par route' : 'practice'}</span>}
           {isPast && !solvedOfficially && <span className="st-mode">from {prettyDate(data.date)}</span>}
+          {state.solved && shownResult && (
+            <button type="button" className="btn small" onClick={() => setSheet('result')}>
+              See result
+            </button>
+          )}
         </div>
 
         <Forecast world={world} turn={state.turn} />
@@ -419,24 +474,6 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           onFocus={setFocus}
         />
 
-        <div className="foot">
-          <label className="toggle small">
-            <input
-              type="checkbox"
-              checked={showLandings}
-              onChange={(e) => {
-                setShowLandings(e.target.checked);
-                save('mutator-landings', e.target.checked);
-              }}
-            />
-            <span>Show landing rings</span>
-          </label>
-          {state.solved && shownResult && (
-            <button type="button" className="btn small" onClick={() => setSheet('result')}>
-              See result
-            </button>
-          )}
-        </div>
       </section>
 
       {sheet === 'rules' && (

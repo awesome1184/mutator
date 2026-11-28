@@ -4,6 +4,10 @@ import { padNumber, prettyDate } from '../../shared/engine/date.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import type { MutationId, Puzzle } from '../../shared/engine/types.ts';
 import { BADGES, verdict } from '../../shared/scoring.ts';
+import { courierWaypoints } from '../../shared/engine/forecast.ts';
+import { colOf, parseActions, rowOf, toIdx } from '../../shared/engine/grid.ts';
+import { replay } from '../../shared/engine/sim.ts';
+import { compileWorld } from '../../shared/engine/world.ts';
 import { MutationGlyph } from './icons.tsx';
 
 export function Stars({ n, size = 22 }: { n: number; size?: number }) {
@@ -134,6 +138,49 @@ export function Vote({ vote, onVote, busy }: { vote: VoteInfo; onVote: (m: Mutat
   );
 }
 
+/** The route you took, traced over the starting board. */
+export function RouteMap({ puzzle, route }: { puzzle: Puzzle; route: string }) {
+  const actions = parseActions(route) ?? [];
+  const w = compileWorld(puzzle);
+  const r = replay(w, actions);
+  const at = (i: number): string => `${colOf(i) * 10 + 5},${rowOf(i) * 10 + 5}`;
+  const segments: number[][] = [];
+  let seg: number[] = [w.start];
+  const jumps: [number, number][] = [];
+  for (const evs of r.events) {
+    for (const p of courierWaypoints(evs)) {
+      if (p.jump) {
+        jumps.push([seg[seg.length - 1] as number, p.to]);
+        segments.push(seg);
+        seg = [p.to];
+      } else seg.push(p.to);
+    }
+  }
+  segments.push(seg);
+  return (
+    <svg className="route-map" viewBox="-2 -2 74 74" role="img" aria-label="Your route">
+      <rect x="-1" y="-1" width="72" height="72" rx="3" className="rm-plate" />
+      {puzzle.grid.map((row, rr) =>
+        row.split('').map((ch, cc) =>
+          ch === '#' ? (
+            <rect key={`${rr}-${cc}`} x={cc * 10 + 1} y={rr * 10 + 1} width="8" height="8" rx="1.5" className="rm-wall" />
+          ) : (
+            <circle key={`${rr}-${cc}`} cx={cc * 10 + 5} cy={rr * 10 + 5} r="3.3" className="rm-well" />
+          )
+        )
+      )}
+      <rect x={colOf(toIdx(puzzle.exit)) * 10 + 2} y={rowOf(toIdx(puzzle.exit)) * 10 + 2} width="6" height="6" rx="1" className="rm-exit" />
+      {jumps.map(([a, b], k) => (
+        <polyline key={`j${k}`} points={`${at(a)} ${at(b)}`} className="rm-jump" />
+      ))}
+      {segments.map((sg, k) => (
+        <polyline key={k} points={sg.map(at).join(' ')} className="rm-path" />
+      ))}
+      <circle cx={colOf(w.start) * 10 + 5} cy={rowOf(w.start) * 10 + 5} r="2.6" className="rm-start" />
+    </svg>
+  );
+}
+
 type ResultProps = {
   puzzle: Puzzle;
   result: Result;
@@ -164,6 +211,7 @@ export function ResultPanel(p: ResultProps) {
         <Stars n={r.stars} size={30} />
         <p className="verdict">{verdict(r.moves, r.par, r.clean)}</p>
       </div>
+      <RouteMap puzzle={p.puzzle} route={r.route} />
       <dl className="facts">
         <div>
           <dt>Moves</dt>

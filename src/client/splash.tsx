@@ -11,6 +11,7 @@ import type { Coord, Puzzle } from '../shared/engine/types.ts';
 import { getApi, type SplashResponse } from './lib/api.ts';
 import { MutationGlyph } from './game/icons.tsx';
 import { Stars } from './game/Panels.tsx';
+import { Wordmark } from './game/Wordmark.tsx';
 
 function requestedDate(): string | undefined {
   const fromPost = context?.postData?.date;
@@ -66,9 +67,14 @@ function MiniPlate({ p }: { p: Puzzle }) {
       <rect x={e.x - 3.2} y={e.y - 3.2} width="6.4" height="6.4" rx="1.2" className="mp-exit" />
       {cells.map((c, k) => {
         const q = at(c);
-        return <rect key={k} x={q.x - 1.8} y={q.y - 2.8} width="3.6" height="5.6" rx="1.8" className="mp-cell" />;
+        return <rect key={k} x={q.x - 2.2} y={q.y - 3} width="4.4" height="6" rx="1" className="mp-cell" />;
       })}
-      <circle cx={s.x} cy={s.y} r="3.2" className="mp-me" />
+      <g className="mp-me-blob" transform={`translate(${s.x} ${s.y})`}>
+        <circle r="4.4" className="mp-me-halo" />
+        <circle r="3.4" className="mp-me" />
+        <circle cx="-1.2" cy="-0.6" r="0.9" fill="#fff" />
+        <circle cx="1.2" cy="-0.6" r="0.9" fill="#fff" />
+      </g>
     </svg>
   );
 }
@@ -94,7 +100,7 @@ function Splash() {
   return (
     <main className="splash">
       <header className="sp-head">
-        <h1 className="wordmark">MUTATOR</h1>
+        {p ? <Wordmark number={p.number} ink={MUTATIONS[p.mutations[0] ?? 'GRAVITY'].ink} /> : <h1 className="wordmark">MUTATOR</h1>}
         {p && (
           <p className="issue">
             <span className="issue-no">#{padNumber(p.number)}</span>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent } from 'react';
-import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, delta } from '../../shared/engine/grid.ts';
+import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, delta, manhattan } from '../../shared/engine/grid.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import { nextBlight, courierWaypoints, type Preview } from '../../shared/engine/forecast.ts';
 import { cellAt, massTier } from '../../shared/engine/sim.ts';
@@ -174,8 +174,9 @@ function Tile({ t }: { t: TileView }) {
   if (t.wall) {
     return (
       <svg viewBox="0 0 100 100" className="tile" aria-hidden="true">
-        <rect x="5" y="5" width="90" height="90" rx="14" className="wall" />
-        <path d="M18 14h64" className="wall-shine" />
+        <rect x="5" y="9" width="90" height="88" rx="14" className="wall-base" />
+        <rect x="5" y="4" width="90" height="86" rx="14" className="wall" />
+        <path d="M20 12h60" className="wall-shine" />
         {t.wallGlyph === 'magnet' && (
           <g className="wall-glyph">
             <path d="M32 30v20a18 18 0 0036 0V30" />
@@ -183,10 +184,12 @@ function Tile({ t }: { t: TileView }) {
           </g>
         )}
         {t.wallGlyph === 'hub' && (
-          <g className="wall-glyph">
-            <circle cx="50" cy="50" r="14" />
-            <path d="M50 22v10M78 50H68M50 78V68M22 50h10" />
-            <path d="M70 26a34 34 0 016 6" />
+          <g className="wall-glyph gear">
+            <circle cx="50" cy="50" r="17" />
+            <circle cx="50" cy="50" r="6" fill="currentColor" />
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+              <rect key={a} x="46" y="23" width="8" height="10" rx="1.5" fill="currentColor" stroke="none" transform={`rotate(${a} 50 50)`} />
+            ))}
           </g>
         )}
         {t.wallGlyph === 'pylon' && (
@@ -201,7 +204,8 @@ function Tile({ t }: { t: TileView }) {
   return (
     <svg viewBox="0 0 100 100" className="tile" aria-hidden="true">
       <circle cx="50" cy="50" r="41" className={t.pit ? 'pit' : t.ice ? 'well ice' : 'well'} />
-      {!t.pit && <path d="M17 42a34 34 0 0125-25" className="well-rim" />}
+      {!t.pit && <path d="M16 46a34 34 0 0130-30" className="well-rim" />}
+      {!t.pit && <path d="M84 54a34 34 0 01-30 30" className="well-lip" />}
 
       {t.flooded && <circle cx="50" cy="50" r="41" className="water" />}
       {t.floodNext && <path d="M14 50c9-7 18 7 27 0s18-7 27 0 18 7 23 2" className="water-next" />}
@@ -369,6 +373,7 @@ type Props = {
   tick: number;
   bumps: number;
   lastDir: Action | null;
+  bumpDir: Action | null;
   previews: Preview[];
   showLandings: boolean;
   focus: Action | null;
@@ -377,11 +382,13 @@ type Props = {
   onInspect: (text: string | null) => void;
 };
 
-export function Board({ world, state, events, tick, bumps, lastDir, previews, showLandings, focus, reducedMotion, onAction, onInspect }: Props) {
+export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, previews, showLandings, focus, reducedMotion, onAction, onInspect }: Props) {
   const tiles = useMemo(() => buildTiles(world, state), [world, state]);
+  const celebrate = state.solved && events.some((e) => e.t === 'solved') && !reducedMotion;
+  const bursts = reducedMotion ? [] : events.filter((e): e is Extract<StepEvent, { t: 'collect' }> => e.t === 'collect');
   const [courierAt, setCourierAt] = useState(state.pos);
   const [warping, setWarping] = useState(false);
-  const [shake, setShake] = useState(false);
+  const [nudge, setNudge] = useState<Dir | null>(null);
   const timers = useRef<number[]>([]);
 
   // Walk the courier through every tile it passed this move.
@@ -413,8 +420,8 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
 
   useEffect(() => {
     if (bumps === 0 || reducedMotion) return;
-    setShake(true);
-    const t = window.setTimeout(() => setShake(false), 220);
+    setNudge(bumpDir && bumpDir !== 'W' ? (bumpDir as Dir) : null);
+    const t = window.setTimeout(() => setNudge(null), 200);
     return () => window.clearTimeout(t);
   }, [bumps, reducedMotion]);
 
@@ -544,7 +551,7 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
         ))}
       </div>
       <div className="plate-shadow">
-      <div className={`plate${shake ? ' shake' : ''}`}>
+      <div className="plate">
       <div
         ref={boardRef}
         className="field"
@@ -556,9 +563,9 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
         role="img"
         aria-label={`Board. You are at ${ROWS[rowOf(state.pos)]}${colOf(state.pos) + 1}. Exit at ${ROWS[rowOf(world.exit)]}${colOf(world.exit) + 1}.`}
       >
-        <div className="tiles">
+        <div className={`tiles${celebrate ? ' win' : ''}`}>
           {tiles.map((t) => (
-            <div key={t.i} className="cell-slot">
+            <div key={t.i} className="cell-slot" style={celebrate ? { animationDelay: `${manhattan(t.i, world.exit) * 55}ms` } : undefined}>
               <Tile t={t} />
             </div>
           ))}
@@ -615,6 +622,17 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
               ))}
             </g>
           )}
+          {world.hubs.map((h) => (
+            <g key={`hub${h}`} className="spin-ring" style={{ stroke: MUTATIONS.TURNTABLES.ink }}>
+              <circle cx={centre2(h).x} cy={centre2(h).y} r="100" />
+              {[45, 135, 225, 315].map((a) => {
+                const rad = ((a - 90) * Math.PI) / 180;
+                const x = centre2(h).x + 100 * Math.cos(rad);
+                const y = centre2(h).y + 100 * Math.sin(rad);
+                return <path key={a} d={`M${x - 9} ${y - 9}l9 9-9 9`} transform={`rotate(${a} ${x} ${y})`} />;
+              })}
+            </g>
+          ))}
           {links.map((l, k) => (
             <line
               key={`ln${k}`}
@@ -675,7 +693,7 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
         {gravityNow && (
           <div className="entity gravity-hint" style={pct(courierAt)}>
             <svg viewBox="0 0 100 100" aria-hidden="true" style={{ transform: `rotate(${ROT[gravityNow]}deg)` }}>
-              <path d="M50 -4V-24M41 -15l9-9 9 9" />
+              <path d="M50 10V-6M44 0l6-6 6 6" />
             </svg>
           </div>
         )}
@@ -722,8 +740,20 @@ export function Board({ world, state, events, tick, bumps, lastDir, previews, sh
             ) : null
           )}
 
+        {bursts.map((b, k) => (
+          <div key={`burst${tick}-${k}`} className="entity burst" style={pct(b.at)}>
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="30" />
+              {[0, 60, 120, 180, 240, 300].map((a) => (
+                <path key={a} d="M50 14v-10" transform={`rotate(${a} 50 50)`} />
+              ))}
+            </svg>
+          </div>
+        ))}
         <div className={`entity courier${warping ? ' warping' : ''}`} style={pct(courierAt)}>
-          <Courier look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null} />
+          <div key={tick} className={`courier-inner${reducedMotion || tick === 0 ? '' : ' hop'}${nudge ? ` nudge-${nudge}` : ''}`}>
+            <Courier look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null} />
+          </div>
         </div>
       </div>
       </div>
