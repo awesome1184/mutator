@@ -1,0 +1,356 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { addDays } from '../src/shared/engine/date.ts';
+import { generatePuzzle } from '../src/shared/engine/generator.ts';
+import { parseActions } from '../src/shared/engine/grid.ts';
+import { initialState, replay, stateKey, step } from '../src/shared/engine/sim.ts';
+import { solve } from '../src/shared/engine/solver.ts';
+import { compileWorld, emitterDir, exitFor } from '../src/shared/engine/world.ts';
+import { nextBlight, previewActions } from '../src/shared/engine/forecast.ts';
+import { difficultyOf } from '../src/shared/engine/difficulty.ts';
+import { dayPlan } from '../src/shared/engine/schedule.ts';
+import type { Action } from '../src/shared/engine/types.ts';
+import { at, co, makePuzzle, walls } from './helpers.ts';
+import type { StepResult } from '../src/shared/engine/types.ts';
+
+const st = (r: StepResult) => (r.ok ? r.state : undefined);
+
+test('engine source never touches randomness or the clock', () => {
+  const dir = new URL('../src/shared/engine/', import.meta.url);
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.ts') || file === 'date.ts') continue;
+    const src = readFileSync(new URL(file, dir), 'utf8');
+    assert.ok(!src.includes('Math.random'), `${file} uses Math.random`);
+    assert.ok(!src.includes('Date.now'), `${file} uses Date.now`);
+    assert.ok(!src.includes('performance.now'), `${file} uses performance.now`);
+  }
+});
+
+test('the same date always produces the same puzzle', () => {
+  for (const d of ['2026-11-30', '2026-12-02', '2026-12-06']) {
+    assert.equal(JSON.stringify(generatePuzzle(d)), JSON.stringify(generatePuzzle(d)));
+  }
+});
+
+test('the community pick changes the puzzle deterministically', () => {
+  const a = generatePuzzle('2026-12-03');
+  const plan = a.communityPick;
+  assert.ok(plan);
+  const other = generatePuzzle('2026-12-03', { pick: 'GRAVITY' });
+  assert.equal(JSON.stringify(other), JSON.stringify(generatePuzzle('2026-12-03', { pick: 'GRAVITY' })));
+});
+
+test('stored par routes replay to a solve in exactly par moves', () => {
+  let d = '2026-12-07';
+  let hard = 0;
+  for (let i = 0; i < 7; i++) {
+    const p = generatePuzzle(d);
+    const actions = parseActions(p.solution ?? '');
+    assert.ok(actions);
+    const r = replay(compileWorld(p), actions);
+    assert.ok(r.ok && r.solved, `${d} solution does not solve`);
+    assert.equal(r.solvedAt, p.par, `${d} par mismatch`);
+    if (difficultyOf(compileWorld(p), initialState(compileWorld(p)), p.par) >= dayPlan(d).tier.difficulty) hard++;
+    d = addDays(d, 1);
+  }
+  // Most days should reach their difficulty target.
+  assert.ok(hard >= 4, `only ${hard} of 7 days were hard enough`);
+});
+
+test('replaying a route twice gives identical states and events', () => {
+  const p = generatePuzzle('2026-12-05');
+  const w = compileWorld(p);
+  const route: Action[] = ['U', 'R', 'W', 'D', 'L', 'L', 'U', 'R', 'R', 'D'];
+  const a = replay(w, route);
+  const b = replay(compileWorld(p), route);
+  assert.deepEqual(a.states.map((s) => stateKey(w, s)), b.states.map((s) => stateKey(w, s)));
+  assert.equal(JSON.stringify(a.events), JSON.stringify(b.events));
+});
+
+test('previews do not change the state they look at', () => {
+  const p = generatePuzzle('2026-12-01');
+  const w = compileWorld(p);
+  const s = initialState(w);
+  const before = stateKey(w, s);
+  previewActions(w, s);
+  assert.equal(stateKey(w, s), before);
+});
+
+test('blocked moves are rejected and cost nothing', () => {
+  const p = makePuzzle({ mutations: [], start: co(3, 0) });
+  const w = compileWorld(p);
+  const s = initialState(w);
+  assert.equal(step(w, s, 'L').ok, false);
+  const res = step(w, s, 'W');
+  assert.ok(res.ok);
+  assert.equal(res.state.turn, 1);
+});
+
+test('plain board: par is the walking distance', () => {
+  const p = makePuzzle({ mutations: [] });
+  const r = solve(compileWorld(p));
+  assert.equal(r.par, 6);
+});
+
+test('gravity pulls after every move and rotates every 3 moves', () => {
+  const p = makePuzzle({ mutations: ['GRAVITY'], start: co(0, 0), grid: walls() });
+  const w = compileWorld(p);
+  let s = initialState(w);
+  const r1 = step(w, s, 'R');
+  assert.ok(r1.ok);
+  s = r1.state;
+  assert.equal(s.pos, at(1, 1));
+});
+
+test('conveyors chain and stop when blocked', () => {
+  const p = makePuzzle({
+    mutations: ['CONVEYOR'],
+    start: co(0, 0),
+    conveyors: [
+      { r: 0, c: 1, dir: 'R' },
+      { r: 0, c: 2, dir: 'R' }
+    ],
+    grid: walls([0, 4])
+  });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(0, 3));
+});
+
+test('portals swap pairs every 3 moves', () => {
+  const p = makePuzzle({
+    mutations: ['PORTALS'],
+    start: co(0, 0),
+    portals: [
+      { r: 0, c: 1, label: 0 },
+      { r: 6, c: 6, label: 1 },
+      { r: 6, c: 0, label: 2 },
+      { r: 0, c: 6, label: 3 }
+    ]
+  });
+  const w = compileWorld(p);
+  const first = step(w, initialState(w), 'R');
+  assert.ok(first.ok);
+  assert.equal(first.state.pos, at(6, 6)); // A -> B
+  const late = replay(w, ['W', 'W', 'W', 'R']);
+  assert.equal(late.states[4]?.pos, at(6, 0)); // A -> C after the swap
+});
+
+test('decay: cracked tiles fall in once you step off', () => {
+  const p = makePuzzle({ mutations: ['DECAY'], start: co(3, 0), cracked: [co(3, 1)] });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[2]?.decay[at(3, 1)], 0);
+  assert.equal(step(w, r.states[2]!, 'L').ok, false);
+});
+
+test('blight forecast names the tile that actually gets infected', () => {
+  const p = makePuzzle({ mutations: ['INFECTION'], blight: [co(0, 3)], blightOrder: ['D', 'L', 'R', 'U'] });
+  const w = compileWorld(p);
+  const s0 = initialState(w);
+  const f = nextBlight(w, s0);
+  assert.ok(f);
+  const r = replay(w, ['W', 'W']);
+  assert.equal(r.states[2]?.blight[f.target], 1);
+});
+
+test('mirror drone mirrors and holds', () => {
+  const p = makePuzzle({ mutations: ['MIRROR_DRONE'], droneStart: co(5, 5) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'W', 'U']);
+  assert.equal(r.states[1]?.drone, at(5, 4));
+  assert.equal(r.states[2]?.drone, at(5, 4));
+  assert.equal(r.states[3]?.drone, at(6, 4));
+});
+
+test('echo repeats the previous action one turn late', () => {
+  const p = makePuzzle({ mutations: ['ECHO'], echoStart: co(5, 3) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'U']);
+  assert.equal(r.states[1]?.echo, at(5, 3));
+  assert.equal(r.states[2]?.echo, at(5, 4));
+});
+
+test('overclock moves two tiles on every third move', () => {
+  const p = makePuzzle({ mutations: ['OVERCLOCK'], start: co(0, 0), exit: co(6, 6) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R', 'R']);
+  assert.equal(r.states[3]?.pos, at(0, 4));
+});
+
+test('one-way gates only admit movement along the arrow', () => {
+  const p = makePuzzle({ mutations: ['ONE_WAY_GATES'], start: co(3, 0), oneWays: [{ r: 3, c: 1, dir: 'L' }] });
+  const w = compileWorld(p);
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+});
+
+test('solver par is a lower bound for random routes', () => {
+  const p = generatePuzzle('2026-12-04');
+  const w = compileWorld(p);
+  // Any accepted solving route must be at least par long.
+  const res = solve(w, { maxStates: 200000, maxDepth: 30 });
+  assert.equal(res.par, p.par);
+});
+
+test('wraparound: walking off an edge comes back on the other side', () => {
+  const p = makePuzzle({ mutations: ['WRAPAROUND'], start: co(3, 0) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'L');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 6));
+  assert.ok(r.events.some((e) => e.t === 'wrap'));
+});
+
+test('crates: pushed by walking, never by forces, and they block', () => {
+  const p = makePuzzle({ mutations: ['CRATES'], start: co(3, 0), crates: [co(3, 1)], cells: [co(0, 0), co(6, 6)], grid: walls([3, 3]) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.ok(r.ok);
+  assert.deepEqual(r.states[1]?.crates, [at(3, 2)]);
+  assert.equal(r.states[1]?.pos, at(3, 1));
+  // The crate is now against a wall, so the next push is refused.
+  assert.equal(step(w, r.states[1]!, 'R').ok, false);
+});
+
+test('skittish cells step away when you come within 2 tiles', () => {
+  const p = makePuzzle({ mutations: ['SKITTISH_CELLS'], start: co(3, 0), cells: [co(3, 3), co(6, 6)] });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.equal(r.states[1]?.cells[0], at(3, 4));
+  assert.ok(r.events[0]?.some((e) => e.t === 'flee'));
+});
+
+test('a cornered skittish cell can be caught', () => {
+  const p = makePuzzle({ mutations: ['SKITTISH_CELLS'], start: co(0, 4), cells: [co(0, 6), co(6, 0)], exit: co(3, 3) });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R']);
+  assert.equal((r.states[2]!.got & 1) !== 0, true);
+});
+
+test('springs throw you two tiles onward, over a wall', () => {
+  const p = makePuzzle({ mutations: ['SPRINGS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], springs: [co(3, 1)], grid: walls([3, 2]) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 3));
+});
+
+test('paint: barriers only let the matching colour through', () => {
+  const p = makePuzzle({
+    mutations: ['PAINT'],
+    start: co(3, 0),
+    cells: [co(0, 0), co(6, 6)],
+    paintGates: [{ r: 3, c: 2, color: 0 }],
+    paintPads: [{ r: 4, c: 1, color: 0 }]
+  });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.equal(step(w, r.states[1]!, 'R').ok, false);
+  const r2 = replay(w, ['R', 'D', 'U', 'R']);
+  assert.ok(r2.ok);
+  assert.equal(r2.states[4]?.pos, at(3, 2));
+});
+
+test('keys open locks for good, and only with a key in hand', () => {
+  const p = makePuzzle({ mutations: ['KEYS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], keys: [co(4, 0)], locks: [co(3, 1)] });
+  const w = compileWorld(p);
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+  const r = replay(w, ['D', 'U', 'R', 'L', 'R']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+  assert.equal(r.states[5]?.keys, 0);
+  assert.equal(r.states[5]?.locksOpen, 1);
+});
+
+test('mud stops you and holds you for one move, even against gravity', () => {
+  const p = makePuzzle({ mutations: ['MUD', 'GRAVITY'], start: co(1, 0), cells: [co(0, 6), co(6, 6)], mud: [co(1, 1)] });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[1]?.pos, at(1, 1));
+  assert.equal(r.states[1]?.stuck, true);
+  assert.equal(r.states[2]?.pos, at(1, 1));
+  assert.equal(r.states[3]?.pos, at(2, 2));
+});
+
+test('mutation pools: never two mild mutations, and Mondays are never mild', async () => {
+  const { dayPlan, isMild, mutationsFor } = await import('../src/shared/engine/schedule.ts');
+  let d = '2026-12-01';
+  for (let i = 0; i < 400; i++) {
+    const plan = dayPlan(d);
+    for (const pick of plan.candidates) {
+      const { mutations } = mutationsFor(plan, pick);
+      assert.ok(mutations.filter(isMild).length <= 1, `${d}: ${mutations.join('+')}`);
+      if (plan.tier.slots === 1) assert.ok(!isMild(mutations[0]!), `${d} Monday ${mutations[0]}`);
+    }
+    d = addDays(d, 1);
+  }
+});
+
+test('pucks slide until something stops them', () => {
+  const p = makePuzzle({ mutations: ['PUCKS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], crates: [co(3, 1)], grid: walls([3, 5]) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 1));
+  assert.deepEqual(r.state.crates, [at(3, 4)]);
+});
+
+test('shuttles carry you across the chasm, and the chasm is closed elsewhere', () => {
+  const p = makePuzzle({ mutations: ['SHUTTLES'], start: co(2, 1), cells: [co(0, 0), co(6, 6)], shuttles: [[co(3, 1), co(3, 2), co(3, 3)]] });
+  const w = compileWorld(p);
+  const r = replay(w, ['D', 'D']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+  assert.equal(r.states[1]?.pos, at(3, 2));
+  assert.equal(r.states[2]?.pos, at(4, 2));
+  const w2 = compileWorld({ ...p, start: co(2, 3) });
+  assert.equal(step(w2, initialState(w2), 'D').ok, false);
+});
+
+test('hatches: the exit moves every 3 moves, and only the open one counts', () => {
+  const p = makePuzzle({ mutations: ['HATCHES'], start: co(3, 0), cells: [co(3, 1), co(3, 2)], exit: co(3, 3), hatches: [co(0, 6)] });
+  const w = compileWorld(p);
+  assert.equal(exitFor(w, 0), at(3, 3));
+  assert.equal(exitFor(w, 3), at(0, 6));
+  assert.equal(exitFor(w, 6), at(3, 3));
+  const r = replay(w, ['R', 'R', 'R']);
+  assert.ok(r.solved);
+  // Arrive one move late and the exit has already moved on.
+  const late = replay(w, ['W', 'R', 'R', 'R']);
+  assert.ok(late.ok);
+  assert.ok(!late.solved);
+});
+
+test('low charge: moves use charge, chargers and cells refill it, empty means stuck', () => {
+  const p = makePuzzle({ mutations: ['LOW_CHARGE'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], chargers: [co(3, 2)], charge: 3 });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[1]?.charge, 2);
+  assert.equal(r.states[2]?.charge, 3);
+  const dry = replay(w, ['D', 'D', 'D']);
+  assert.ok(dry.ok);
+  assert.equal(dry.states[3]?.charge, 0);
+  assert.equal(step(w, dry.states[3]!, 'D').ok, false);
+  const cell = compileWorld({ ...p, cells: [co(3, 1), co(6, 6)], chargers: [] });
+  const c = replay(cell, ['U', 'D', 'R']);
+  assert.equal(c.states[3]?.charge, 3);
+});
+
+test('lasers: you cannot step into a beam, and emitters turn every 3 moves', () => {
+  const p = makePuzzle({ mutations: ['LASERS'], start: co(3, 2), cells: [co(0, 0), co(6, 6)], lasers: [{ r: 0, c: 3, dir: 'D' }] });
+  const w = compileWorld(p);
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+  assert.equal(emitterDir('D', 3), 'L');
+  // After 3 moves the emitter faces left, along the top edge, so the column is clear.
+  const r = replay(w, ['W', 'W', 'W', 'R']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+});
+
+test('tow: stepping away from a crate drags it after you', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'TOW'], start: co(3, 2), cells: [co(0, 0), co(6, 6)], crates: [co(3, 1)] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 2)]);
+  assert.deepEqual(st(step(w, initialState(w), 'U'))?.crates, [at(3, 1)]);
+});

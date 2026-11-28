@@ -1,48 +1,229 @@
 # MUTATOR
 
-A daily grid puzzle about adapting to changing rules. Collect both Energy Cells, navigate the active mutations, and reach the exit in as few moves as possible.
+A daily puzzle for Reddit. Each day you get a 7×7 well plate and the same goal:
+pick up both cells, then reach the exit. What changes is the rules. Every day
+splices two mutations into the physics (Sunday gets three), drawn from a roster
+of 40: gravity that swings around the clock, portals that re-pair every three
+moves, floor that cracks behind you, a drone that mirrors you, blight that
+creeps one tile every other move, cells that run away from you, crates and
+pucks to push, edges that wrap around, springs, keys and locks, paint
+barriers, mud, shuttles across a chasm, an exit that hops between hatches, a
+charge that runs out, laser beams, a tow hook, and more.
 
-## Run locally
+The mutations are written to interact. A sliding puck scoops up keys for you,
+springs throw crates, prisms bend both pucks and laser beams, the drone and
+the echo collect keys and block beams, shuttles carry crates, mud stops
+anything that slides, beams go through portals. Every combination rule is
+listed in `src/shared/engine/interactions.ts`, shown in the rules sheet when
+both mutations are in play, and backed by a test in `tests/synergy.test.ts`.
 
-Requires Node.js 20.19+ or 22.12+ (Node.js 22.12+ is recommended).
+There's no luck involved. The only randomness is in building the day's board.
+After that, the same moves always produce the same result, and everything the
+world is about to do is shown before you move: the gravity direction for the
+next few moves, which gates close, where the blight grows next, where each of
+your moves would land you. Par is the true minimum, worked out by a solver that
+checks every reachable state.
+
+Built with Devvit Web for Reddit's Game of the Day hackathon.
+
+## How to play
+
+- Swipe on the board, tap a neighbouring well, or use the pad. Arrow keys and
+  WASD also work. Space holds for a move, Z undoes, R restarts.
+- Hold skips your move, but the world still takes its turn.
+- Moves that would go nowhere are refused and cost nothing.
+- Your first solve of the day is the one that counts. Undo and restart are
+  free, but the board records how many you used and uses them to break ties.
+- After solving you can vote on which mutation gets spliced into tomorrow's
+  puzzle, post your result (with your route behind a spoiler) as a comment,
+  watch a par route, or keep playing for practice.
+
+### The week
+
+| Day | Difficulty | Mutations | Par range |
+| --- | --- | --- | --- |
+| Monday | Warm-up | 1 (picked by vote) | 6–11 |
+| Tuesday | Standard | 2 | 8–13 |
+| Wednesday | Tricky | 2 | 9–15 |
+| Thursday | Tricky | 2 | 10–16 |
+| Friday | Hard | 2 | 11–18 |
+| Saturday | Expert | 2 | 12–22 |
+| Sunday | Anomaly | 3 | 10–22 |
+
+One slot each day is chosen by the community the day before. The fixed slots
+cycle through the whole roster, so every mutation comes round regularly.
+
+Mutations are split into two pools that players never see. The core pool
+changes how you move (gravity, ice, belts, portals, springs, paint and so on).
+The mild pool adds an obstacle or a timer to an otherwise normal board (gates,
+doors, flood, keys, mud and so on). A day never gets two mild mutations, and
+Monday's single mutation is always from the core pool, so no day is just two
+small tweaks on a plain board. The pools are defined by the `pool` field in
+`src/shared/engine/mutations.ts` and enforced in `schedule.ts`.
+
+## What's on Reddit
+
+- **Puzzles built ahead.** An hourly job builds tomorrow's puzzle for each
+  possible vote outcome, one per run, so the daily post never waits on the
+  generator. If a draft is missing, the puzzle is built on demand as before.
+- **A daily post.** A scheduled job creates the day's post at 00:01 UTC, pins
+  it, unpins yesterday's, and comments a short recap of yesterday (solvers,
+  share on par, top three).
+- **An in-feed preview.** It shows the starting board, today's rules, par and
+  how many people have solved it. The game opens in expanded view.
+- **A board per puzzle.** Ranked by moves, then fewest undos and restarts, then
+  who finished first. It shows snoovatars, and there's a separate streak board.
+- **Streaks and a catalogue** of the mutations you've beaten.
+- **Optional streak flair.** A player can opt in to showing their streak as
+  user flair in the community.
+- **Comment sharing.** "Post my result as a comment" writes your score as you,
+  with the route hidden behind a spoiler.
+- **A vote.** It decides tomorrow's community mutation.
+- **An archive** of past days. Older puzzles are playable and ranked on their
+  own day's board, but they don't extend streaks.
+
+## What changed from the earlier version
+
+The previous version was a single 6,000-line React file that no longer
+compiled. It also hid information the player needed: the infection target was
+secret, and the UI didn't fit on a phone. This rebuild:
+
+- rewrites the engine in typed, pure TypeScript shared by client and server
+  (`src/shared/engine`), with a precise turn order and a Hold action;
+- makes the server replay every submitted route, so a score is only accepted
+  if the moves really solve the puzzle;
+- adds forecasts, landing previews and connector lines (portal pairs, plates
+  to doors, magnet and cell pulls acting on you, the gravity direction), so
+  nothing the world does is hidden;
+- adds thirteen new mutations: Wraparound, Skittish Cells, Crates, Springs,
+  Paint, Keys & Locks, Mud, Pucks, Shuttles, Hatches, Low Charge, Lasers and
+  Tow;
+- adds a generator that targets a par range per weekday and rejects boards
+  where any active mutation doesn't change the best route (checked by removing
+  each mutation and re-solving);
+- reworks Decay (now cracked tiles that hold for one crossing) so it reliably
+  matters and stays solvable;
+- adds Devvit integration: daily posts, Redis-backed results, leaderboards,
+  streaks, votes, flair, comments and an archive;
+- replaces the whole UI. Everything is drawn as something on a lab bench:
+  the day's mutations are strips of labelling tape, moves are counted on a
+  printed scale under the plate, the keypad looks like an instrument's, and
+  rules and results come on graph-paper sheets. It fits a phone screen
+  without scrolling.
+
+## Difficulty
+
+Par alone doesn't say whether a puzzle is hard: a long walk can still be
+obvious. So the generator plays each candidate board with five reference
+players and measures how far over par each one ends up:
+
+- three greedy players who look one, two or three moves ahead and take
+  whichever move leaves the shortest walk to the cells and the exit;
+- two planners who keep the 4 or the 12 most promising lines of play going at
+  once instead of committing to one.
+
+All of them use the belts and portals they can see, and will make one stop for
+a key, a paint splash or a door plate when it opens a shorter walk. The board's
+difficulty score adds up how far over par they end up: the best greedy player
+counts once (up to 6), the 4-wide planner twice and the 12-wide planner three
+times (up to 4 each). A score of 0 means a greedy walk finds par; above about
+10, planning several lines ahead doesn't find it either.
+
+| Day | Difficulty at least |
+| --- | --- |
+| Monday | 3 (and no more than 10) |
+| Tuesday | 5 (and no more than 14) |
+| Wednesday | 7 |
+| Thursday | 8 |
+| Friday | 9 |
+| Saturday | 10 |
+| Sunday | 9 |
+
+The generator first tries fresh boards, then climbs: it nudges the most
+promising boards one tile at a time (a wall, a feature, a cell or the exit),
+mostly on the route a greedy player takes, and keeps a nudge when it makes the
+board harder. Throughout, par must stay in range and every mutation must still
+change the best route. The players live in `src/shared/engine/difficulty.ts`.
+
+## Determinism
+
+- `src/shared/engine` never reads the clock or `Math.random`. A unit test
+  enforces this.
+- A puzzle is a pure function of its date and the voted mutation, and it is
+  stored the first time it is generated, so later code changes can't alter a
+  past day. Bump `RULES_VERSION` in `src/shared/engine/grid.ts` whenever
+  movement rules change.
+- The generator's effort is capped by a fixed state budget, not by time, so it
+  produces the same board on every machine.
+- Ties in the vote go to the first candidate in a fixed order.
+
+## Project layout
+
+```
+devvit.json              Devvit config: entrypoints, menu, triggers, daily cron
+src/shared/engine/       rules, solver, generator, daily schedule (pure)
+src/shared/service.ts    game service (results, streaks, votes) over a tiny KV
+src/server/              Hono server for Devvit: /api routes, daily post job
+src/client/              React client: splash.html (in feed), game.html (expanded)
+tests/                   engine and service tests (node --test)
+tools/                   audit scripts for generated days and mutation pairs
+```
+
+## Running it
+
+You need Node 24 (see `.nvmrc`).
 
 ```bash
 npm install
-npm run dev
+npm run test:unit        # engine + service tests
+npm run type-check
+npm run dev:web          # standalone browser version on localhost
+npm run build:web        # standalone build to dist/web (used by GitHub Pages)
 ```
 
-## Build
+For a single file you can open from disk with no server or internet, run
+`npm run build:offline`. It writes `dist/offline/mutator.html`. Its Past
+panel has a test bench for loading a scratch board with any mutations.
+
+The standalone version runs the same game service in the browser on
+localStorage, so you can play without Reddit. It has a **Next day** button
+next to the date that moves its clock forward a day, so you can test the next
+puzzle, the vote result and streaks without waiting. The "days ahead, reset"
+button next to it goes back to the real date. Neither appears on Reddit. Add `?muts=GRAVITY,DECAY` to the
+URL to try any combination of mutations on a scratch board.
+
+### On Reddit
 
 ```bash
-npm run build
-npm run preview
+npm run login            # devvit login, opens a browser
+npm run dev              # devvit playtest: creates r/<app>_dev and a test post
+npm run deploy           # type-check, tests, devvit upload
 ```
 
-## Mutation modules
+The app name is `mutator-daily` in `devvit.json` and `package.json`. If Reddit
+says the name is taken, change it in both files before the first upload.
 
-MUTATOR currently has 27 mutation modules, creating 351 possible two-module pairings. Daily puzzles normally select two modules. Payload Mass can add one compatible host module when it needs one.
+In a subreddit where the app is installed, moderators get a menu item,
+**MUTATOR: post today's puzzle**. The install trigger and the daily job create
+the post automatically.
 
-The ten newest modules are:
+### Audits
 
-- **Reflectors:** bend movement by 90 degrees
-- **Echo:** replay the Courier's previous direction one turn later
-- **One-Way Gates:** allow entry only in the arrow direction
-- **Orbital Cells:** move uncollected Energy Cells around four-tile loops
-- **Pulse Beam:** sweep a telegraphed row or column, active every other turn
-- **Ventilation:** push the Courier from vent tiles on alternating turns
-- **Inertia:** repeating a direction carries movement one extra tile
-- **Flood:** advance from a marked edge, up to two tiles deep
-- **Phase Layers:** alternate which marked tiles are solid
-- **Rotors:** rotate the next input by 90 degrees
+```bash
+npm run audit:days -- 2026-12-01 28    # generate four weeks, check par and timing
+npm run audit:pairs -- 2026-12-02      # every two-mutation combination
+npm run audit:difficulty -- 2026-12-05 # how hard each pairing comes out
+```
 
-## Difficulty and balance
+At the time of writing, every single mutation and every two-mutation pair
+generates without falling back to the emergency board. In a 42-day run every
+puzzle landed in its par range. Generation takes 2 to 10 s per day.
 
-The puzzle generator uses the same deterministic turn simulator as the player and its BFS solver to find an optimal route. Candidate daily layouts target 7–22 optimal moves. Random wall density is reduced when the selected mutations already add blocking terrain or moving hazards. Overclock and Inertia share a two-tile movement cap, Flood stops after two tiles, and Pulse Beam's active line is shown before the move.
+## Hackathon checklist
 
-## GitHub Pages
-
-The `Deploy MUTATOR to GitHub Pages` workflow builds the Vite app and publishes it whenever a commit is pushed to `main`. The production build uses the `/mutator/` base path for this repository.
-
-Before the first deployment, open **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
-
-The playable game remains in `mutator_daily_grid_puzzle.tsx`; the Vite files provide the web entry point and deployment setup.
+- App listing: `https://developers.reddit.com/apps/<app-name>` (exists after
+  the first `devvit upload`).
+- Demo post: a public test subreddit (under 200 members) with the app installed
+  and today's post created.
+- Don't run `devvit publish` during the hackathon. Keep the app uploaded and
+  playtestable through judging.
