@@ -56,6 +56,15 @@ export type World = {
   droneStart: number;
   echoStart: number;
   crateStart: number[];
+  /** Exit positions in the order the exit visits them (just the exit without Hatches). */
+  hatches: number[];
+  isHatch: Uint8Array;
+  /** Shuttle tracks (Shuttles); every track tile is chasm. */
+  tracks: number[][];
+  chasm: Uint8Array;
+  /** Charging pads and full charge (Low Charge). */
+  chargerAt: Uint8Array;
+  chargeMax: number;
   blightStart: number[];
   blightOrder: Dir[];
   /** Whether the state key must include the turn number. */
@@ -167,6 +176,14 @@ export function compileWorld(puzzle: Puzzle): World {
   if (on('MUD')) for (const t of puzzle.mud ?? []) base.mud[toIdx(t)] = 1;
   const keyAt = new Int8Array(CELLS).fill(-1);
   const lockAt = new Int8Array(CELLS).fill(-1);
+  const tracks = on('SHUTTLES') ? (puzzle.shuttles ?? []).filter((t) => t.length >= 2).map((t) => t.map(toIdx)) : [];
+  const chasm = new Uint8Array(CELLS);
+  for (const t of tracks) for (const i of t) chasm[i] = 1;
+  const chargerAt = new Uint8Array(CELLS);
+  if (on('LOW_CHARGE')) for (const t of puzzle.chargers ?? []) chargerAt[toIdx(t)] = 1;
+  const hatches = [toIdx(puzzle.exit), ...(on('HATCHES') ? (puzzle.hatches ?? []).map(toIdx) : [])];
+  const isHatch = new Uint8Array(CELLS);
+  for (const h of hatches) isHatch[h] = 1;
   if (on('KEYS')) {
     (puzzle.keys ?? []).forEach((t, k) => (keyAt[toIdx(t)] = k));
     (puzzle.locks ?? []).forEach((t, k) => (lockAt[toIdx(t)] = k));
@@ -191,7 +208,10 @@ export function compileWorld(puzzle: Puzzle): World {
       base.paintGate[i]! >= 0 ||
       base.mud[i] ||
       keyAt[i]! >= 0 ||
-      lockAt[i]! >= 0
+      lockAt[i]! >= 0 ||
+      chasm[i] ||
+      chargerAt[i] ||
+      isHatch[i]
     ) {
       base.special[i] = 1;
     }
@@ -219,7 +239,7 @@ export function compileWorld(puzzle: Puzzle): World {
   if (on('DECAY')) {
     for (const t of puzzle.cracked ?? []) {
       const i = toIdx(t);
-      if (!base.special[i] && !cellTiles[i] && i !== toIdx(puzzle.start) && i !== toIdx(puzzle.exit)) fragile[i] = 1;
+      if (!base.special[i] && !cellTiles[i] && i !== toIdx(puzzle.start) && !isHatch[i]) fragile[i] = 1;
     }
   }
 
@@ -245,7 +265,9 @@ export function compileWorld(puzzle: Puzzle): World {
       'PULSE_BEAM',
       'VENTILATION',
       'FLOOD',
-      'PHASE_LAYERS'
+      'PHASE_LAYERS',
+      'SHUTTLES',
+      'HATCHES'
     ].includes(m)
   );
 
@@ -266,7 +288,13 @@ export function compileWorld(puzzle: Puzzle): World {
     hubs,
     tether: on('TETHER_PYLON') && puzzle.tether ? toIdx(puzzle.tether) : -1,
     droneStart: on('MIRROR_DRONE') && puzzle.droneStart ? toIdx(puzzle.droneStart) : -1,
-    crateStart: on('CRATES') ? (puzzle.crates ?? []).map(toIdx).sort((a, b) => a - b) : [],
+    crateStart: on('CRATES') || on('PUCKS') ? (puzzle.crates ?? []).map(toIdx).sort((a, b) => a - b) : [],
+    hatches,
+    isHatch,
+    tracks,
+    chasm,
+    chargerAt,
+    chargeMax: on('LOW_CHARGE') ? Math.max(1, Math.min(15, puzzle.charge ?? 6)) : 0,
     echoStart: on('ECHO') && puzzle.echoStart ? toIdx(puzzle.echoStart) : -1,
     blightStart: on('INFECTION') ? puzzle.blight.map(toIdx) : [],
     blightOrder: puzzle.blightOrder.length === 4 ? puzzle.blightOrder : ['U', 'R', 'D', 'L'],
@@ -354,6 +382,29 @@ export function isFloodedAt(w: World, turn: number, i: number, depth = floodDept
 export function cellPosAt(w: World, index: number, turn: number): number {
   const path = w.cellPaths[index] as number[];
   return path[turn % path.length] as number;
+}
+
+/** Where shuttle k is after `turn` moves: one tile per move, back and forth along its track. */
+export function shuttleAt(w: World, k: number, turn: number): number {
+  const t = w.tracks[k] as number[];
+  const period = 2 * (t.length - 1);
+  const i = turn % period;
+  return (i < t.length ? t[i] : t[period - i]) as number;
+}
+
+/** Whether a shuttle is parked on tile i after `turn` moves. */
+export function shuttleHere(w: World, i: number, turn: number): boolean {
+  for (let k = 0; k < w.tracks.length; k++) if (shuttleAt(w, k, turn) === i) return true;
+  return false;
+}
+
+/** Moves between exit hops (Hatches). */
+export const HATCH_PERIOD = 3;
+
+/** Where the exit is for the move after `turn` moves. */
+export function exitFor(w: World, turn: number): number {
+  if (w.hatches.length === 1) return w.hatches[0] as number;
+  return w.hatches[Math.floor(turn / HATCH_PERIOD) % w.hatches.length] as number;
 }
 
 export function turnsUntil(turn: number, period: number, offset: number): number {

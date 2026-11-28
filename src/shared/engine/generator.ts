@@ -37,7 +37,10 @@ const SIGNATURE: Partial<Record<MutationId, StepEvent['t'][]>> = {
   SPRINGS: ['spring'],
   PAINT: ['paint'],
   KEYS: ['unlock'],
-  MUD: ['mud']
+  MUD: ['mud'],
+  PUCKS: ['crate'],
+  SHUTTLES: ['ride'],
+  LOW_CHARGE: ['charge']
 };
 
 type Builder = {
@@ -179,15 +182,16 @@ export function buildBoard(
 
   // 3. Layout style. A divider wall with gaps gives gates, doors and
   //    shortcuts something to guard.
-  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS', 'PAINT', 'KEYS', 'SPRINGS', 'VENTILATION'];
+  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS', 'PAINT', 'KEYS', 'SPRINGS', 'VENTILATION', 'SHUTTLES'];
   const wantsDivider = mutations.some((m) => gatewayMuts.includes(m));
   // Keys and paint only matter if every way across is guarded, so they nearly always get a divider.
-  const sealable = has('KEYS') || has('PAINT');
+  const sealable = has('KEYS') || has('PAINT') || has('SHUTTLES');
   const style = wantsDivider && rng.next() < (sealable ? 0.92 : 0.7) ? 'divider' : rng.next() < 0.35 ? 'pillars' : 'scatter';
   if (style === 'divider' && tether < 0 && hubs.length === 0) {
     const axis = rng.next() < 0.5 ? 'row' : 'col';
     const line = rng.int(2, 5);
-    const gapCount = has('PHASE_SHIFT') && mutations.length === 1 ? 0 : rng.int(1, 3);
+    // A shuttle usually is the only way across.
+    const gapCount = (has('PHASE_SHIFT') && mutations.length === 1) || (has('SHUTTLES') && rng.next() < 0.6) ? 0 : rng.int(1, 3);
     const along = rng.shuffle([0, 1, 2, 3, 4, 5, 6]);
     const gapSet = new Set(along.slice(0, gapCount));
     for (let k = 0; k < N; k++) {
@@ -202,6 +206,26 @@ export function buildBoard(
       const v = axis === 'row' ? rowOf(i) : colOf(i);
       return v < line ? -1 : v > line ? 1 : 0;
     };
+    if (has('SHUTTLES')) {
+      // Part of the divider becomes a chasm with a shuttle running along it.
+      const len = rng.int(3, 5);
+      const runs: number[] = [];
+      for (let k0 = 0; k0 + len <= N; k0++) {
+        let ok = true;
+        for (let k = k0; k < k0 + len; k++) if (gapSet.has(k)) ok = false;
+        if (ok) runs.push(k0);
+      }
+      if (runs.length > 0) {
+        const k0 = rng.pick(runs);
+        const track: Coord[] = [];
+        for (let k = k0; k < k0 + len; k++) {
+          const i = axis === 'row' ? idx(line, k) : idx(k, line);
+          b.wall[i] = 0;
+          track.push(toCoord(i));
+        }
+        p.shuttles = [rng.next() < 0.5 ? track : track.reverse()];
+      }
+    }
   } else if (style === 'pillars') {
     for (const [r, c] of [
       [1, 1],
@@ -213,6 +237,21 @@ export function buildBoard(
       const i = idx(r, c);
       if (!b.occ[i] && !b.ring[i] && rng.next() < 0.6) setWall(i);
     }
+  }
+  if (has('SHUTTLES') && !p.shuttles) {
+    // No divider: a short chasm across open floor instead.
+    const axis = rng.next() < 0.5 ? 'row' : 'col';
+    const line = rng.int(1, N - 1);
+    const len = 3;
+    const k0 = rng.int(1, N - len);
+    const track: Coord[] = [];
+    for (let k = k0; k < k0 + len; k++) {
+      const i = axis === 'row' ? idx(line, k) : idx(k, line);
+      if (b.occ[i] || b.ring[i]) return null;
+      b.occ[i] = 1;
+      track.push(toCoord(i));
+    }
+    p.shuttles = [track];
   }
   const notGap = (i: number): boolean => !b.gaps.includes(i);
 
@@ -240,6 +279,17 @@ export function buildBoard(
   p.start = toCoord(start);
   p.exit = toCoord(exit);
   p.cells = [toCoord(cellA), toCoord(cellB)];
+  if (has('HATCHES')) {
+    // One or two more hatches, away from the first and from where you start.
+    const extra = rng.int(1, 3);
+    const spots = [exit];
+    for (let k = 0; k < extra; k++) {
+      const h = claim(b, (i) => inZone(i) && notGap(i) && manhattan(i, start) >= 3 && spots.every((x) => manhattan(x, i) >= 3));
+      if (h >= 0) spots.push(h);
+    }
+    if (spots.length < 2) return null;
+    p.hatches = spots.slice(1).map(toCoord);
+  }
 
   // 5. Orbits: a 2x2 loop that includes each cell.
   if (has('ORBITAL_CELLS')) {
@@ -552,13 +602,25 @@ export function buildBoard(
       if (t >= 0) (p.mud ??= []).push(toCoord(t));
     }
   }
-  if (has('CRATES')) {
+  if (has('CRATES') || has('PUCKS')) {
     const n = rng.int(2, 4);
     for (let k = 0; k < n; k++) {
       const t = claim(b, (i) => rowOf(i) > 0 && rowOf(i) < N - 1 && colOf(i) > 0 && colOf(i) < N - 1 && manhattan(i, start) >= 2, true);
       if (t >= 0) (p.crates ??= []).push(toCoord(t));
     }
     if ((p.crates ?? []).length === 0) return null;
+  }
+  if (has('LOW_CHARGE')) {
+    // A few chargers spread over the board, none right next to the start.
+    const n = rng.int(1, 4);
+    const placed: number[] = [start];
+    for (let k = 0; k < n; k++) {
+      const c = claim(b, (i) => notGap(i) && placed.every((x) => manhattan(x, i) >= 3));
+      if (c >= 0) placed.push(c);
+    }
+    if (placed.length < 2) return null;
+    p.chargers = placed.slice(1).map(toCoord);
+    p.charge = rng.int(4, 8);
   }
   if (has('PULSE_BEAM')) {
     const axis = rng.next() < 0.5 ? 'row' : 'col';
@@ -852,7 +914,9 @@ const MOVABLE = [
   'paintGates',
   'keys',
   'locks',
-  'mud'
+  'mud',
+  'hatches',
+  'chargers'
 ] as const;
 
 function perturb(src: Puzzle, rng: SeededRng, path: readonly number[]): Puzzle | null {
@@ -884,6 +948,7 @@ function perturb(src: Puzzle, rng: SeededRng, path: readonly number[]): Puzzle |
   }
   if (p.tether) fixed[toIdx(p.tether)] = 1;
   for (const o of p.orbits) for (const c of o) fixed[toIdx(c)] = 1;
+  for (const t of p.shuttles ?? []) for (const c of t) fixed[toIdx(c)] = 1;
   const free: number[] = [];
   for (let i = 0; i < CELLS; i++) if (!occ[i] && !fixed[i] && !wallAt(i)) free.push(i);
   if (free.length === 0) return null;
@@ -1047,6 +1112,13 @@ function fallbackPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[],
     p.locks = [{ r: 2, c: 5 }];
   }
   if (has('MUD')) p.mud = [{ r: 4, c: 4 }];
+  if (has('PUCKS')) p.crates = [{ r: 4, c: 3 }];
+  if (has('SHUTTLES')) p.shuttles = [[{ r: 1, c: 6 }, { r: 2, c: 6 }, { r: 3, c: 6 }]];
+  if (has('HATCHES')) p.hatches = [{ r: 0, c: 5 }, { r: 6, c: 5 }];
+  if (has('LOW_CHARGE')) {
+    p.chargers = [{ r: 5, c: 3 }];
+    p.charge = 8;
+  }
   if (has('MIRROR_DRONE')) p.droneStart = { r: 0, c: 6 };
   if (has('ECHO')) p.echoStart = { r: 6, c: 0 };
   if (has('PULSE_BEAM')) p.beam = { axis: 'col', start: 0, step: 1 };

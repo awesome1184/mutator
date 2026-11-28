@@ -16,7 +16,7 @@
 import { ACTIONS, CELLS, DIRS, stepIdx, wrapIdx } from './grid.ts';
 import { cellAt, step, stateKey } from './sim.ts';
 import type { GameState } from './types.ts';
-import { isFloodedAt, layerFor, portalMode, portalPartner, type Layer, type World } from './world.ts';
+import { exitFor, isFloodedAt, layerFor, portalMode, portalPartner, shuttleHere, type Layer, type World } from './world.ts';
 
 const FAR = 60;
 /** Steps and walk measurements done so far, so callers can charge them to a budget. */
@@ -24,7 +24,7 @@ let work = 0;
 /** walkLeft results for the current naiveBest call, keyed by state. */
 let memo = new Map<string | number, number>();
 
-type Walk = { solid: Uint8Array; L: Layer; mode: 0 | 1 };
+type Walk = { solid: Uint8Array; L: Layer; mode: 0 | 1; exit: number };
 
 function walkModel(w: World, s: GameState): Walk {
   const L = layerFor(w, s.turn);
@@ -35,8 +35,9 @@ function walkModel(w: World, s: GameState): Walk {
     else if (L.door[i] && !s.doorsOpen) solid[i] = 1;
     else if ((w.lockAt[i] as number) >= 0 && !(s.locksOpen & (1 << (w.lockAt[i] as number))) && s.keys === 0) solid[i] = 1;
     else if ((L.paintGate[i] as number) >= 0 && s.paint !== (L.paintGate[i] as number) + 1) solid[i] = 1;
+    else if (w.chasm[i] && !shuttleHere(w, i, s.turn)) solid[i] = 1;
   }
-  return { solid, L, mode: portalMode(s.turn) };
+  return { solid, L, mode: portalMode(s.turn), exit: exitFor(w, s.turn) };
 }
 
 /** Where you end up after walking onto tile j, counting visible belts and portals. */
@@ -87,17 +88,17 @@ function distances(w: World, m: Walk, from: number): Int16Array {
 /** Shortest walk from `from` through every tile in `left` (at most two) and on to the exit. */
 function tour(w: World, m: Walk, from: number, left: number[]): number {
   const here = distances(w, m, from);
-  if (left.length === 0) return here[w.exit] as number;
+  if (left.length === 0) return here[m.exit] as number;
   if (left.length === 1) {
     const a = left[0] as number;
-    return (here[a] as number) + (distances(w, m, a)[w.exit] as number);
+    return (here[a] as number) + (distances(w, m, a)[m.exit] as number);
   }
   const [a, b] = left as [number, number];
   const fa = distances(w, m, a);
   const fb = distances(w, m, b);
   return Math.min(
-    (here[a] as number) + (fa[b] as number) + (fb[w.exit] as number),
-    (here[b] as number) + (fb[a] as number) + (fa[w.exit] as number)
+    (here[a] as number) + (fa[b] as number) + (fb[m.exit] as number),
+    (here[b] as number) + (fb[a] as number) + (fa[m.exit] as number)
   );
 }
 
@@ -122,7 +123,10 @@ function measure(w: World, s: GameState): number {
   const left: number[] = [];
   for (const k of [0, 1]) if (!(s.got & (1 << k))) left.push(cellAt(w, s, k));
   let best = tour(w, m, s.pos, left);
-  if (!(w.has.PAINT || w.has.KEYS || w.has.BLAST_DOORS)) return best;
+  // Low Charge: a walk longer than the charge left needs a stop at a charger
+  // (a cell would refill you too, but the tour already counts those).
+  if (w.has.LOW_CHARGE && best > s.charge && left.length === 0) best = FAR;
+  if (!(w.has.PAINT || w.has.KEYS || w.has.BLAST_DOORS || w.has.LOW_CHARGE)) return best;
 
   const here = distances(w, m, s.pos);
   const detour = (at: number, after: GameState): void => {
@@ -139,6 +143,9 @@ function measure(w: World, s: GameState): number {
     }
     if (w.has.BLAST_DOORS && m.L.plate[i] === 1) {
       detour(i, { ...s, doorsOpen: !s.doorsOpen });
+    }
+    if (w.has.LOW_CHARGE && w.chargerAt[i] && (here[i] as number) <= s.charge) {
+      detour(i, { ...s, charge: w.chargeMax });
     }
   }
   return best;

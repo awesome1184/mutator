@@ -216,6 +216,33 @@ const GLYPHS: Record<MutationId, ReactElement> = {
       <path d="M3 17c0-2 3-3 6-3 1-1 5-1 7 0 3 0 5 1 5 3s-4 3-9 3-9-1-9-3z" />
       <path d="M9 9a2 2 0 100-.01M15 6a1.5 1.5 0 100-.01" />
     </g>
+  ),
+  PUCKS: (
+    <g {...P}>
+      <ellipse cx="14" cy="14" rx="7" ry="3.5" />
+      <path d="M7 14v2.5c0 2 3 3.5 7 3.5s7-1.5 7-3.5V14" />
+      <path d="M2 9h6M3 5.5h5" />
+    </g>
+  ),
+  SHUTTLES: (
+    <g {...P}>
+      <path d="M3 19h18" strokeDasharray="2 3" />
+      <rect x="7" y="9" width="10" height="6" rx="1.5" />
+      <path d="M4 12l2-2M4 12l2 2M20 12l-2-2M20 12l-2 2" />
+    </g>
+  ),
+  HATCHES: (
+    <g {...P}>
+      <circle cx="7" cy="16" r="4" />
+      <circle cx="17" cy="8" r="4" />
+      <path d="M10 13l4-3" strokeDasharray="1.5 2.5" />
+    </g>
+  ),
+  LOW_CHARGE: (
+    <g {...P}>
+      <rect x="3" y="7" width="16" height="10" rx="2" />
+      <path d="M21 10.5v3M6.5 10v4" />
+    </g>
   )
 };
 

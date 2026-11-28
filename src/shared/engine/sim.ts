@@ -18,6 +18,9 @@ import {
   beamLine,
   cellPosAt,
   closedPolarity,
+  exitFor,
+  shuttleAt,
+  shuttleHere,
   floodDepth,
   gravityDir,
   isFloodedAt,
@@ -87,6 +90,7 @@ export function initialState(w: World): GameState {
     keysTaken: 0,
     locksOpen: 0,
     stuck: false,
+    charge: w.chargeMax,
     decay,
     blight,
     solved: false
@@ -146,6 +150,8 @@ function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover, sight = false
   if (pg >= 0 && !(who === 'courier' && ctx.paint === pg + 1)) return true;
   const lk = ctx.w.lockAt[i] as number;
   if (lk >= 0 && !(ctx.locksOpen & (1 << lk)) && !(who === 'courier' && !sight && ctx.keys > 0)) return true;
+  // Chasm (Shuttles): only the courier can step onto a shuttle parked there.
+  if (ctx.w.chasm[i] && (who !== 'courier' || !shuttleHere(ctx.w, i, ctx.turn))) return true;
   if (who !== 'drone' && ctx.drone === i) return true;
   if (who !== 'echo' && ctx.echo === i) return true;
   if (who !== 'courier' && ctx.pos === i) return true;
@@ -227,7 +233,8 @@ function crateCanEnter(ctx: Ctx, to: number, d: Dir): boolean {
   const w = ctx.w;
   const L = ctx.L;
   if (to < 0 || ctx.crates.includes(to)) return false;
-  if (to === w.exit || ctx.cells.includes(to) || to === ctx.pos || to === ctx.echo || to === ctx.drone) return false;
+  if (w.isHatch[to] || ctx.cells.includes(to) || to === ctx.pos || to === ctx.echo || to === ctx.drone) return false;
+  if (w.chargerAt[to]) return false;
   if ((L.vent[to] as number) >= 0 || L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
   if (L.spring[to] || (w.keyAt[to] as number) >= 0) return false;
   if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
@@ -285,7 +292,8 @@ function pushCrate(ctx: Ctx, at: number, d: Dir): boolean {
         continue;
       }
     }
-    if (w.has.CRYO_SLICK && L.ice[cur]) {
+    // Pucks keep sliding until something stops them; crates only slide on ice.
+    if (w.has.PUCKS || (w.has.CRYO_SLICK && L.ice[cur])) {
       const nxt = nb(w, cur, travel);
       if (crateCanEnter(ctx, nxt, travel)) {
         if (moveCrate(ctx, cur, nxt) === 'filled') return true;
@@ -509,6 +517,7 @@ export function step(w: World, s: GameState, action: Action): StepResult {
 
 function stepInner(w: World, s: GameState, action: Action): StepResult {
   if (s.solved) return { ok: false, reason: 'Already solved' };
+  if (w.has.LOW_CHARGE && s.charge <= 0) return { ok: false, reason: 'Out of charge' };
   const turn = s.turn;
   const L = layerFor(w, turn);
   const hold = action === 'W';
@@ -657,7 +666,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   let after = -1;
   if (w.has.AFTERIMAGE && s.prevPos >= 0) {
     const cand = s.prevPos;
-    if (cand !== pos0 && cand !== ctx.drone && cand !== ctx.echo && cand !== w.exit) {
+    if (cand !== pos0 && cand !== ctx.drone && cand !== ctx.echo && !w.isHatch[cand]) {
       after = cand;
       ctx.events.push({ t: 'after', at: cand });
     }
@@ -727,8 +736,38 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     }
   }
 
-  const solved = ctx.got === 3 && pos === w.exit;
+  // Shuttles move one tile along their tracks, carrying you if you are aboard.
+  for (let k = 0; k < w.tracks.length; k++) {
+    const from = shuttleAt(w, k, turn);
+    const to = shuttleAt(w, k, next);
+    if (from === to) continue;
+    ctx.events.push({ t: 'shuttle', index: k, from, to });
+    if (pos === from) {
+      ctx.events.push({ t: 'ride', from, to });
+      pos = to;
+    }
+  }
+
+  // The exit you were aiming at is the one shown before this move.
+  const solved = ctx.got === 3 && pos === exitFor(w, turn);
   if (solved) ctx.events.push({ t: 'solved' });
+  if (!solved && w.hatches.length > 1) {
+    const a = exitFor(w, turn);
+    const b = exitFor(w, next);
+    if (a !== b) ctx.events.push({ t: 'hatch', from: a, to: b });
+  }
+
+  // Low Charge: every move uses a charge; a charger or a fresh cell fills you up.
+  let charge = s.charge;
+  if (w.has.LOW_CHARGE) {
+    const fresh = ctx.got !== s.got;
+    if (w.chargerAt[pos] || fresh) {
+      charge = w.chargeMax;
+      if (w.chargerAt[pos]) ctx.events.push({ t: 'charge', at: pos });
+    } else {
+      charge = s.charge - 1;
+    }
+  }
 
   return {
     ok: true,
@@ -752,6 +791,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       keysTaken: ctx.keysTaken,
       locksOpen: ctx.locksOpen,
       stuck: ctx.enteredMud && !s.stuck,
+      charge,
       decay: ctx.decay,
       blight: ctx.blight,
       solved
@@ -776,7 +816,7 @@ function fleeCells(ctx: Ctx, you: number): void {
     const order = (Math.abs(dr) >= Math.abs(dc) ? [vert, horiz] : [horiz, vert]).filter((d): d is Dir => d !== null);
     for (const d of order) {
       const to = nb(w, c, d);
-      if (to < 0 || to === you || to === w.exit || to === ctx.drone || to === ctx.echo) continue;
+      if (to < 0 || to === you || w.isHatch[to] || to === ctx.drone || to === ctx.echo) continue;
       if (ctx.cells.includes(to) || ctx.crates.includes(to)) continue;
       if (L.wall[to] || L.special[to] || (w.portalAt[to] as number) >= 0) continue;
       if (ctx.decay[to] === 0 || ctx.blight[to] || ctx.after === to) continue;
@@ -796,7 +836,7 @@ export function canCrumble(w: World, i: number): boolean {
 function canBlight(w: World, L: Layer, i: number): boolean {
   if (i < 0) return false;
   if (L.wall[i] || L.special[i] || w.cellTiles[i]) return false;
-  if (i === w.start || i === w.exit) return false;
+  if (i === w.start || w.isHatch[i]) return false;
   if ((w.portalAt[i] as number) >= 0) return false;
   return true;
 }
@@ -885,10 +925,10 @@ function numericKeys(w: World): boolean {
 }
 
 function fitsNumber(w: World): boolean {
-  if (w.has.DECAY || w.has.INFECTION || w.has.CRATES || w.has.SKITTISH_CELLS) return false;
+  if (w.has.DECAY || w.has.INFECTION || w.has.CRATES || w.has.PUCKS || w.has.SKITTISH_CELLS) return false;
   if (w.keyAt.some((k) => k >= 4) || w.lockAt.some((k) => k >= 4)) return false;
   const bits =
-    (w.timed ? 8 : 0) + 35 + (w.has.AFTERIMAGE ? 6 : 0) + (w.has.PAINT ? 2 : 0) + (w.has.KEYS ? 11 : 0) + (w.has.MUD ? 1 : 0);
+    (w.timed ? 8 : 0) + 35 + (w.has.AFTERIMAGE ? 6 : 0) + (w.has.PAINT ? 2 : 0) + (w.has.KEYS ? 11 : 0) + (w.has.MUD ? 1 : 0) + (w.has.LOW_CHARGE ? 4 : 0);
   return bits <= 52;
 }
 
@@ -909,6 +949,7 @@ export function stateKey(w: World, s: GameState): string | number {
     if (w.has.PAINT) k = k * 4 + s.paint; // 2
     if (w.has.KEYS) k = ((k * 8 + s.keys) * 16 + s.keysTaken) * 16 + s.locksOpen; // 11
     if (w.has.MUD) k = k * 2 + (s.stuck ? 1 : 0); // 1
+    if (w.has.LOW_CHARGE) k = k * 16 + s.charge; // 4
     return k;
   }
   let k =
@@ -917,7 +958,8 @@ export function stateKey(w: World, s: GameState): string | number {
     s.pendingRot + ',' + s.after + (s.doorsOpen ? 'o' : 'c');
   if (w.has.AFTERIMAGE) k += ',' + s.prevPos;
   if (w.has.SKITTISH_CELLS) k += ',c' + s.cells.join('.');
-  if (w.has.CRATES) k += ',x' + s.crates.join('.');
+  if (w.has.CRATES || w.has.PUCKS) k += ',x' + s.crates.join('.');
+  if (w.has.LOW_CHARGE) k += ',q' + s.charge;
   if (w.has.PAINT) k += ',p' + s.paint;
   if (w.has.KEYS) k += ',k' + s.keys + '.' + s.keysTaken + '.' + s.locksOpen;
   if (w.has.MUD) k += s.stuck ? ',m' : '';

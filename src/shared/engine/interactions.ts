@@ -50,7 +50,10 @@ const NOTES: Record<string, string> = {
   'GRAVITY+MUD': 'While you are stuck in mud, gravity can’t pull you.',
   'CRATES+KEYS': 'A crate can’t go into a lock until you have opened it.',
   'CRATES+PAINT': 'Crates never pass paint barriers.',
-  'MIRROR_DRONE+PAINT': 'The drone never passes paint barriers, whatever colour you are.'
+  'MIRROR_DRONE+PAINT': 'The drone never passes paint barriers, whatever colour you are.',
+  'CONVEYOR+PUCKS': 'A puck pushed onto a belt turns with it and keeps sliding the new way.',
+  'MIRROR_DRONE+SHUTTLES': 'The drone can never board a shuttle, so the chasm stops it.',
+  'LOW_CHARGE+MUD': 'Pulling free of mud costs a charge, like any other move.'
 };
 
 export function interactionNotes(muts: readonly MutationId[]): { pair: [MutationId, MutationId]; text: string }[] {

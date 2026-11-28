@@ -61,7 +61,11 @@ export const ALL_MUTATIONS: readonly MutationId[] = [
   'SPRINGS',
   'PAINT',
   'KEYS',
-  'MUD'
+  'MUD',
+  'PUCKS',
+  'SHUTTLES',
+  'HATCHES',
+  'LOW_CHARGE'
 ];
 
 export const MUTATIONS: Record<MutationId, MutationMeta> = {
@@ -229,6 +233,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     rule: 'After every 3rd move, the 4 tiles touching each gear rotate 90° clockwise, along with anything standing on them. Arrows on those tiles rotate too.',
     tip: 'Ride a turntable to get around a wall.',
     pool: 'core',
+    clashes: ['SHUTTLES'],
     timed: true
   },
   TETHER_PYLON: {
@@ -395,6 +400,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     rule: 'Walking into a crate pushes it one tile. Once moving, a crate slides on ice, rides belts and warps through portals. Pushed into a pit, it fills the pit and becomes floor. Gravity and magnets do not move crates, and crates block everything else. A crate on a plate presses it.',
     tip: 'Before every push, check you can still get behind the crate later.',
     pool: 'core',
+    clashes: ['PUCKS'],
     timed: false
   },
   SPRINGS: {
@@ -438,6 +444,52 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     short: 'Mud stops you dead and holds you for one move.',
     rule: 'Entering mud stops you on the spot. Your next move is spent pulling free: you stay put while the rest of the board takes its turn. Nothing moves you while you are stuck, not even gravity or magnets.',
     tip: 'Mud is a brake. Use it to stop a slide or a fall exactly where you want.',
+    pool: 'mild',
+    timed: false
+  },
+  PUCKS: {
+    id: 'PUCKS',
+    name: 'Pucks',
+    ink: '#3B4A6B',
+    darkText: false,
+    short: 'Push a puck and it slides until something stops it.',
+    rule: 'Walking into a puck shoves it, and it keeps sliding the same way until it hits a wall or anything else in its path. A puck that slides into a pit fills it and becomes floor. Belts and portals carry pucks too. You can never pull one.',
+    tip: 'A puck parked in the right spot makes a wall you can stop against.',
+    pool: 'core',
+    clashes: ['CRATES'],
+    timed: false
+  },
+  SHUTTLES: {
+    id: 'SHUTTLES',
+    name: 'Shuttles',
+    ink: '#0E7C86',
+    darkText: false,
+    short: 'A shuttle runs back and forth across the chasm. Ride it over.',
+    rule: 'The chasm can only be crossed on a shuttle. Each shuttle moves one tile along its track after every move, turning back at the ends. Step onto it where it is now, and it carries you with it at the end of your move. Nothing else can board.',
+    tip: 'Count the moves until the shuttle reaches you, and wait for it if you have to.',
+    pool: 'core',
+    clashes: ['TURNTABLES'],
+    timed: true
+  },
+  HATCHES: {
+    id: 'HATCHES',
+    name: 'Hatches',
+    ink: '#5D6B2F',
+    darkText: false,
+    short: 'The exit hops to the next hatch every 3 moves.',
+    rule: 'There are several hatches, and the exit is open at only one of them. Every 3 moves it moves on to the next hatch, in order. The open hatch you see is the one that counts for your next move.',
+    tip: 'You can wait on a hatch for the exit to come to you.',
+    pool: 'mild',
+    timed: true
+  },
+  LOW_CHARGE: {
+    id: 'LOW_CHARGE',
+    name: 'Low Charge',
+    ink: '#E85D04',
+    darkText: false,
+    short: 'Each move uses a charge. Chargers and cells fill you up.',
+    rule: 'You start with a full charge, shown as the segments of your ring. Every move uses one, holding too. Ending a move on a charger, or picking up a cell, fills you back up. With no charge left you cannot move.',
+    tip: 'Plan your route charger to charger.',
     pool: 'mild',
     timed: false
   }

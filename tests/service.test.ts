@@ -82,10 +82,10 @@ test('a puzzle built the day before is the one that gets served', async () => {
   const day = '2026-12-07';
   const left = await prepareTomorrow(envFor(kv, null, addDays(day, -1)));
   assert.equal(left, dayPlan(day).candidates.length);
-  const draft = kv.data.hash[`drafts:v6:${day}`]?.none;
+  const draft = kv.data.hash[`drafts:v7:${day}`]?.none;
   assert.ok(draft);
   const served = await loadPuzzle(envFor(kv, null, day), day);
   assert.equal(JSON.stringify(served), draft);
   assert.equal(JSON.stringify(served), JSON.stringify(generatePuzzle(day)));
-  assert.equal(kv.data.hash[`drafts:v6:${day}`], undefined);
+  assert.equal(kv.data.hash[`drafts:v7:${day}`], undefined);
 });

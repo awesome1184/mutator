@@ -1,5 +1,6 @@
 import './styles.css';
 import '@fontsource-variable/archivo/standard.css';
+import '@fontsource-variable/archivo/standard-italic.css';
 
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -16,10 +17,13 @@ import { dayOffset, getApi, jumpToDay, STANDALONE } from './lib/api.ts';
 import { play, isMuted, setMuted } from './lib/sound.ts';
 import { load, save } from './lib/storage.ts';
 import { Board, PAINT_INK } from './game/Board.tsx';
+import { Gauge } from './game/Gauge.tsx';
+import { Tape } from './game/Tape.tsx';
+import { Difficulty } from './game/Difficulty.tsx';
 import { Wordmark } from './game/Wordmark.tsx';
 import { Controls } from './game/Controls.tsx';
 import { Forecast } from './game/Forecast.tsx';
-import { MutationGlyph, SoundGlyph } from './game/icons.tsx';
+import { SoundGlyph } from './game/icons.tsx';
 import { ArchivePanel, RanksPanel, ResultPanel, YouPanel } from './game/Panels.tsx';
 import { Rules } from './game/Rules.tsx';
 import { Sheet } from './game/Sheet.tsx';
@@ -42,17 +46,6 @@ function buzz(pattern: number | number[]): void {
   }
 }
 
-function ParTrack({ moves, par }: { moves: number; par: number }) {
-  const n = Math.max(par, moves);
-  return (
-    <span className="par-track" aria-hidden="true">
-      {Array.from({ length: n }, (_, i) => (
-        <span key={i} className={`pip${i < moves ? ' done' : ''}${i >= par ? ' over' : ''}${i === par - 1 ? ' par' : ''}`} />
-      ))}
-    </span>
-  );
-}
-
 function RingsGlyph() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -62,8 +55,11 @@ function RingsGlyph() {
   );
 }
 
-function soundFor(events: StepEvent[]): void {
+function soundFor(events: StepEvent[], drained = false): void {
   if (events.some((e) => e.t === 'solved')) return play('win');
+  if (drained) return play('drained');
+  if (events.some((e) => e.t === 'charge')) return play('charge');
+  if (events.some((e) => e.t === 'ride')) return play('ride');
   if (events.some((e) => e.t === 'collect')) return play('cell');
   if (events.some((e) => e.t === 'portal')) return play('warp');
   if (events.some((e) => e.t === 'spring')) return play('spring');
@@ -186,14 +182,14 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
         }));
         if (res.puzzle) setPuzzle(res.puzzle);
         setLastResult(res.ranked ? res.result : { ...res.result, moves: route.length, rewinds, clean: rewinds === 0, route });
-        window.setTimeout(() => setSheet('result'), 650);
+        window.setTimeout(() => setSheet('result'), reducedMotion ? 400 : 1500);
       } catch (e) {
         showToast(e instanceof Error ? e.message : 'Could not save your solve.');
       } finally {
         setSubmitting(false);
       }
     },
-    [data.date]
+    [data.date, reducedMotion]
   );
 
   const game = useGame(puzzle, practice, onSolved);
@@ -208,7 +204,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
         play('bump');
         buzz(12);
       } else {
-        soundFor(res.events);
+        soundFor(res.events, world.has.LOW_CHARGE === true && !!res.state && res.state.charge <= 0 && !res.state.solved);
         if (res.events.some((e) => e.t === 'solved')) buzz([20, 40, 20, 40, 60]);
         else if (res.events.some((e) => e.t === 'collect')) buzz([10, 30, 10]);
       }
@@ -351,9 +347,20 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
   };
 
   const tier = TIERS[puzzle.weekday];
-  const cellsGot = [(state.got & 1) !== 0, (state.got & 2) !== 0];
+  const cellsGot = ((state.got & 1) !== 0 ? 1 : 0) + ((state.got & 2) !== 0 ? 1 : 0);
   const isPast = data.date !== data.today;
   const shownResult = lastResult ?? data.result;
+  const firstVisit = !hintSeen && run.route.length === 0 && !replaying;
+  const outOfCharge = world.has.LOW_CHARGE === true && state.charge <= 0 && !state.solved;
+  const note = replaying
+    ? 'Watching the par route.'
+    : outOfCharge
+      ? 'Out of charge. Undo to keep going.'
+      : practice
+        ? isPast && !solvedOfficially
+          ? `Playing ${prettyDate(data.date)}.`
+          : 'Practice run. Your first solve is the one that counts.'
+        : null;
 
   return (
     <main className="app">
@@ -363,16 +370,17 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           <p className="issue">
             <span className="issue-no">#{padNumber(puzzle.number)}</span>
             <span className="issue-date">{prettyDate(puzzle.dateKey)}</span>
-            {tier && <span className={`tier tier-${tier.id}`}>{tier.label}</span>}
+            {tier && <Difficulty tier={tier.id} label={tier.label} />}
             {STANDALONE && <NextDay />}
           </p>
         </div>
         <nav className="top-nav" aria-label="Menu">
           <button type="button" onClick={() => setSheet('rules')}>
-            Rules
+            <span className="wide-only">How to play</span>
+            <span className="narrow-only">Rules</span>
           </button>
           <button type="button" onClick={() => setSheet('ranks')}>
-            Board
+            Scores
           </button>
           <button type="button" onClick={() => setSheet('you')}>
             You
@@ -407,61 +415,34 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
         </nav>
       </header>
 
-      <section className="muts" aria-label="Today’s mutations">
-        {puzzle.mutations.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className="mut-tag"
-            onClick={() => setSheet('rules')}
-            style={{ ['--mut' as string]: MUTATIONS[m].ink, ['--on-mut' as string]: MUTATIONS[m].darkText ? '#1d1b45' : '#fff' }}
-          >
-            <span className="mt-swatch">
-              <MutationGlyph id={m} size={16} />
-            </span>
-            <span className="mt-name">{MUTATIONS[m].name}</span>
-            {puzzle.communityPick === m && <span className="mt-voted">voted in</span>}
-            <span className="mt-short">{MUTATIONS[m].short}</span>
-          </button>
+      <section className="tapes" aria-label="Today’s mutations">
+        {puzzle.mutations.map((m, k) => (
+          <Tape key={m} id={m} index={k} voted={puzzle.communityPick === m} onClick={() => setSheet('rules')} />
         ))}
       </section>
 
-      <section className="board-area">
-        <Board
-          world={world}
-          state={state}
-          events={run.events}
-          tick={run.tick}
-          bumps={run.bumps}
-          lastDir={state.last}
-          bumpDir={run.lastDir}
-          previews={previews}
-          showLandings={showLandings && !replaying}
-          focus={focus}
-          reducedMotion={reducedMotion}
-          onAction={act}
-          onInspect={setInfo}
-        />
-      </section>
-
-      <section className="side">
-        <div className="status" aria-live="polite">
-          <span className="st-moves">
-            <strong>{state.turn}</strong> {state.turn === 1 ? 'move' : 'moves'}
-          </span>
-          <span className="st-par">par {puzzle.par}</span>
-          <ParTrack moves={state.turn} par={puzzle.par} />
-          <span className="st-cells" aria-label={`${cellsGot.filter(Boolean).length} of 2 cells`}>
-            {cellsGot.map((g, k) => (
-              <svg key={k} width="15" height="22" viewBox="0 0 15 22" aria-hidden="true">
-                <rect x="5" y="0.5" width="5" height="3" rx="1" className={g ? 'cap got' : 'cap'} />
-                <rect x="1.5" y="3" width="12" height="18" rx="3" className={g ? 'cap got' : 'cap'} />
-              </svg>
-            ))}
-            {state.got === 3 && <span>exit open</span>}
-          </span>
+      <section className="stage">
+        <div className="board-area">
+          <Board
+            world={world}
+            state={state}
+            events={run.events}
+            tick={run.tick}
+            bumps={run.bumps}
+            lastDir={state.last}
+            bumpDir={run.lastDir}
+            previews={previews}
+            showLandings={showLandings && !replaying}
+            focus={focus}
+            reducedMotion={reducedMotion}
+            hint={firstVisit}
+            onAction={act}
+            onInspect={setInfo}
+          />
+        </div>
+        <Gauge moves={state.turn} par={puzzle.par} cells={cellsGot}>
           {world.has.KEYS && (
-            <span className="st-keys" aria-label={`${state.keys} ${state.keys === 1 ? 'key' : 'keys'} held`}>
+            <span className="g-extra" aria-label={`${state.keys} ${state.keys === 1 ? 'key' : 'keys'} held`}>
               <svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true">
                 <circle cx="6" cy="7" r="4" fill="none" stroke="currentColor" strokeWidth="2.2" />
                 <path d="M10 7h10M17 7v4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
@@ -470,29 +451,36 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
             </span>
           )}
           {world.has.PAINT && (
-            <span className="st-paint">
-              <i style={{ background: state.paint ? PAINT_INK[state.paint - 1] : 'transparent' }} />
-              {state.paint === 1 ? 'green' : state.paint === 2 ? 'violet' : 'no paint'}
+            <span className="g-extra" title={state.paint === 1 ? 'You are green' : state.paint === 2 ? 'You are violet' : 'No paint yet'}>
+              <i className="g-paint" style={{ background: state.paint ? PAINT_INK[state.paint - 1] : 'transparent' }} />
             </span>
           )}
-          {practice && <span className="st-mode">{replaying ? 'par route' : 'practice'}</span>}
-          {isPast && !solvedOfficially && <span className="st-mode">from {prettyDate(data.date)}</span>}
-          {state.solved && shownResult && (
-            <button type="button" className="btn small" onClick={() => setSheet('result')}>
-              See result
-            </button>
+          {world.has.LOW_CHARGE && (
+            <span className={state.charge <= 1 ? 'g-extra g-low' : 'g-extra'} aria-label={`${state.charge} charge left`}>
+              <svg width="20" height="12" viewBox="0 0 20 12" aria-hidden="true">
+                <rect x="1" y="1" width="16" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                <rect x="3" y="3" width={(12 * state.charge) / Math.max(1, world.chargeMax)} height="6" fill="currentColor" />
+                <path d="M18.5 4.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              {state.charge}
+            </span>
           )}
-        </div>
+        </Gauge>
+        <Caption text={info} fallback={firstVisit ? 'Pick up both cells, then reach the exit.' : 'Tap a well to see what is in it.'} />
+      </section>
 
+      <section className="side">
+        {(note || (state.solved && shownResult)) && (
+          <p className="run-note">
+            {note}
+            {state.solved && shownResult && (
+              <button type="button" className="link-btn" onClick={() => setSheet('result')}>
+                See result
+              </button>
+            )}
+          </p>
+        )}
         <Forecast world={world} turn={state.turn} />
-
-        <p className={info ? 'info' : 'info idle'} aria-live="polite">
-          {info ??
-            (!hintSeen && run.route.length === 0
-              ? 'You are the orange ringed dot. Swipe or use the pad to move. Grab both energy cells (the batteries), then reach the EXIT door. Dashed rings show where each move would land you.'
-              : 'Tap and hold (or hover) any tile to see what it is.')}
-        </p>
-
         <Controls
           world={world}
           state={state}
@@ -504,22 +492,47 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
           onRestart={restart}
           onFocus={setFocus}
         />
-
       </section>
 
       {sheet === 'rules' && (
-        <Sheet title="How it works" onClose={() => setSheet(null)} wide>
+        <Sheet title="How to play" onClose={() => setSheet(null)} wide>
           <Rules puzzle={puzzle} seen={data.me?.seen ?? []} />
         </Sheet>
       )}
       {sheet === 'ranks' && (
-        <Sheet title={`Board for #${padNumber(puzzle.number)}`} onClose={() => setSheet(null)}>
+        <Sheet title={`Scores for #${padNumber(puzzle.number)}`} onClose={() => setSheet(null)}>
           <RanksPanel data={ranks} me={data.user.name} loading={!ranks} />
         </Sheet>
       )}
       {sheet === 'you' && (
         <Sheet title={data.user.name ? `u/${data.user.name}` : 'You'} onClose={() => setSheet(null)}>
-          <YouPanel me={data.me} loggedIn={loggedIn} flairBusy={flairBusy} onFlair={(on) => void flair(on)} />
+          <YouPanel me={data.me} loggedIn={loggedIn} flairBusy={flairBusy} onFlair={(on) => void flair(on)}>
+            <section className="settings">
+              <h3>On this device</h3>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={!muted}
+                  onChange={(e) => {
+                    setMuted(!e.target.checked);
+                    setMutedState(!e.target.checked);
+                  }}
+                />
+                <span>Sound</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={showLandings}
+                  onChange={(e) => {
+                    setShowLandings(e.target.checked);
+                    save('mutator-landings', e.target.checked);
+                  }}
+                />
+                <span>Landing rings: show where each move would put you</span>
+              </label>
+            </section>
+          </YouPanel>
         </Sheet>
       )}
       {sheet === 'past' && (
@@ -557,6 +570,23 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
   );
 }
 
+/** The line under the plate: what a well holds, or a nudge when nothing is pointed at. */
+function Caption({ text, fallback }: { text: string | null; fallback: string }) {
+  const m = text ? /^([A-G][1-7]): (.*)$/s.exec(text) : null;
+  return (
+    <p className={text ? 'caption' : 'caption idle'} aria-live="polite">
+      {m ? (
+        <>
+          <span className="well-id">{m[1]}</span>
+          {m[2]}
+        </>
+      ) : (
+        (text ?? fallback)
+      )}
+    </p>
+  );
+}
+
 /** Standalone only: move the clock on a day to test the next puzzle, votes and streaks. */
 function NextDay() {
   const ahead = dayOffset();
@@ -584,23 +614,18 @@ function BenchPicker({ current }: { current: MutationId[] }) {
   };
   return (
     <section className="bench">
-      <h3 className="rules-sub">Test bench</h3>
-      <p className="muted small">Pick up to three mutations for a scratch board. Results here are not saved.</p>
-      <div className="catalogue">
+      <h3>Test bench</h3>
+      <p className="muted small">Pick up to three mutations for a scratch board. Nothing you do there is saved.</p>
+      <ul className="catalogue">
         {ALL_MUTATIONS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className={picked.includes(m) ? 'cat got' : 'cat'}
-            style={{ ['--mut' as string]: MUTATIONS[m].ink }}
-            onClick={() => toggle(m)}
-            aria-pressed={picked.includes(m)}
-          >
-            <MutationGlyph id={m} size={16} />
-            {MUTATIONS[m].name}
-          </button>
+          <li key={m}>
+            <button type="button" onClick={() => toggle(m)} aria-pressed={picked.includes(m)}>
+              <i style={{ background: MUTATIONS[m].ink }} />
+              {MUTATIONS[m].name}
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
       <div className="result-actions">
         <button type="button" className="btn" disabled={picked.length === 0} onClick={() => go(`?muts=${picked.join(',')}`)}>
           Load scratch board

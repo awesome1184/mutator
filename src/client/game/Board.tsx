@@ -15,6 +15,9 @@ import {
   portalMode,
   portalPartner,
   ventsActive,
+  exitFor,
+  HATCH_PERIOD,
+  shuttleAt,
   type World
 } from '../../shared/engine/world.ts';
 
@@ -43,6 +46,7 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
     if (s.stuck) out.push('Stuck in mud: your next move only pulls you free.');
     if (s.paint) out.push(`You are ${PAINT_WORD[s.paint - 1]}.`);
     if (s.keys) out.push(`Holding ${s.keys} ${s.keys === 1 ? 'key' : 'keys'}.`);
+    if (w.has.LOW_CHARGE) out.push(`${s.charge} of ${w.chargeMax} charge left.`);
   }
   for (const k of [0, 1]) {
     if (s.got & (1 << k)) continue;
@@ -62,12 +66,22 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
       out.push('An orbiting cell moves here after your next move.');
     }
   }
-  if (s.crates.includes(i)) out.push('Crate. Walk into it to push it one tile. It can’t be pulled.');
+  if (s.crates.includes(i))
+    out.push(w.has.PUCKS ? 'Puck. Push it and it slides until something stops it.' : 'Crate. Walk into it to push it one tile. It can’t be pulled.');
+  if (t.chasm) {
+    const parked = w.tracks.some((_, k) => shuttleAt(w, k, s.turn) === i);
+    out.push(parked ? 'Shuttle. Step on and it carries you one tile along the track at the end of your move.' : 'Chasm. Only a shuttle can take you across.');
+  }
+  if (t.hatch !== null) out.push(`Hatch, closed. The exit opens here in ${t.hatch} ${t.hatch === 1 ? 'move' : 'moves'}.`);
+  if (t.charger) out.push('Charger. End a move here to refill your charge.');
   if (w.has.WRAPAROUND && (rowOf(i) === 0 || rowOf(i) === N - 1 || colOf(i) === 0 || colOf(i) === N - 1))
     out.push('Edge tile. Moving off the board here brings you in on the opposite side.');
   if (s.drone === i) out.push('Mirror drone. Moves the opposite way to you. Solid.');
   if (s.echo === i) out.push('Echo. Repeats your previous move one move later. Solid.');
-  if (t.exit) out.push(t.exit.open ? 'Exit, open. Step on it to finish.' : 'Exit, locked. It opens once you have both cells.');
+  if (t.exit) {
+    out.push(t.exit.open ? 'Exit, open. Step on it to finish.' : 'Exit, locked. It opens once you have both cells.');
+    if (t.exit.leaves) out.push(`It moves to the next hatch in ${t.exit.leaves} ${t.exit.leaves === 1 ? 'move' : 'moves'}.`);
+  }
   if (t.wall) {
     out.push(
       t.wallGlyph === 'magnet'
@@ -136,6 +150,11 @@ type TileView = {
   key: boolean;
   lock: { open: boolean } | null;
   mud: boolean;
+  /** Chasm tile and which way its track runs (Shuttles). */
+  chasm: 'h' | 'v' | null;
+  /** A closed hatch, with moves until the exit arrives (Hatches). */
+  hatch: number | null;
+  charger: boolean;
   portal: { label: number; group: number; partner: number } | null;
   fragile: boolean;
   pit: boolean;
@@ -144,7 +163,7 @@ type TileView = {
   blightNext: number | null;
   after: boolean;
   start: boolean;
-  exit: { open: boolean } | null;
+  exit: { open: boolean; leaves: number } | null;
   flooded: boolean;
   floodNext: boolean;
 };
@@ -158,6 +177,18 @@ function buildTiles(w: World, s: GameState): TileView[] {
   const depth = floodDepth(w, s.turn);
   const nextDepth = floodDepth(w, s.turn + 3 - (s.turn % 3));
   const bl = nextBlight(w, s);
+  const exitNow = exitFor(w, s.turn);
+  const hatchIn = (h: number): number => {
+    for (let k = 1; k <= HATCH_PERIOD * w.hatches.length; k++) if (exitFor(w, s.turn + k) === h) return k;
+    return 0;
+  };
+  const trackDir = (i: number): 'h' | 'v' | null => {
+    for (const t of w.tracks) {
+      if (!t.includes(i)) continue;
+      return rowOf(t[0] as number) === rowOf(t[1] as number) ? 'h' : 'v';
+    }
+    return null;
+  };
   const out: TileView[] = [];
   for (let i = 0; i < CELLS; i++) {
     const label = w.portalAt[i] as number;
@@ -182,6 +213,9 @@ function buildTiles(w: World, s: GameState): TileView[] {
       key: (w.keyAt[i] as number) >= 0 && !(s.keysTaken & (1 << (w.keyAt[i] as number))),
       lock: (w.lockAt[i] as number) >= 0 ? { open: (s.locksOpen & (1 << (w.lockAt[i] as number))) !== 0 } : null,
       mud: L.mud[i] === 1,
+      chasm: w.chasm[i] ? trackDir(i) : null,
+      hatch: w.isHatch[i] && i !== exitNow ? hatchIn(i) : null,
+      charger: w.chargerAt[i] === 1,
       portal: label >= 0 ? { label, group: mode === 0 ? (label < 2 ? 0 : 1) : label % 2 === 0 ? 0 : 1, partner: portalPartner(label, mode) } : null,
       fragile: w.fragile[i] === 1 && s.decay[i] !== 0 && s.decay[i] !== -2,
       filled: s.decay[i] === -2,
@@ -190,7 +224,7 @@ function buildTiles(w: World, s: GameState): TileView[] {
       blightNext: bl && bl.target === i ? bl.inMoves : null,
       after: s.after === i,
       start: w.start === i,
-      exit: w.exit === i ? { open: s.got === 3 } : null,
+      exit: exitNow === i ? { open: s.got === 3, leaves: w.hatches.length > 1 ? HATCH_PERIOD - (s.turn % HATCH_PERIOD) : 0 } : null,
       flooded,
       floodNext: !flooded && nextDepth > depth && isFloodedAt(w, s.turn, i, nextDepth)
     });
@@ -265,6 +299,30 @@ function Tile({ t }: { t: TileView }) {
         </g>
       )}
 
+      {t.chasm && (
+        <g className="chasm">
+          <rect x="-1" y="-1" width="102" height="102" />
+          <path d={t.chasm === 'h' ? 'M-2 50h104' : 'M50-2v104'} className="chasm-rail" />
+        </g>
+      )}
+
+      {t.hatch !== null && (
+        <g className="hatch">
+          <circle cx="50" cy="50" r="27" />
+          <path d="M31 50h38M50 31v38" className="hatch-cross" />
+          <text x="50" y="94" textAnchor="middle" className="hatch-count">
+            {`in ${t.hatch}`}
+          </text>
+        </g>
+      )}
+
+      {t.charger && (
+        <g className="charger">
+          <circle cx="50" cy="50" r="27" />
+          <path d="M55 31L40 54h11l-5 17 16-25H51z" className="charger-bolt" />
+        </g>
+      )}
+
       {t.splash !== null && (
         <g className="splash" style={{ color: PAINT_INK[t.splash] }}>
           <path d="M50 28c7 0 9 7 15 6 7-1 10 6 6 11 6 4 5 13-2 15 1 8-7 12-13 8-5 6-14 4-15-3-8 1-13-7-8-13-6-5-3-14 5-14-1-6 5-10 12-10z" />
@@ -306,9 +364,9 @@ function Tile({ t }: { t: TileView }) {
 
       {t.conv && (
         <g transform={`rotate(${ROT[t.conv]} 50 50)`} className="conv">
-          <path d="M30 62l20-20 20 20" />
-          <path d="M30 80l20-20 20 20" opacity="0.5" />
-          <path d="M30 44l20-20 20 20" opacity="0.5" />
+          <path d="M30 80l20-20 20 20" className="chev c1" />
+          <path d="M30 62l20-20 20 20" className="chev c2" />
+          <path d="M30 44l20-20 20 20" className="chev c3" />
         </g>
       )}
 
@@ -420,10 +478,22 @@ function Tile({ t }: { t: TileView }) {
   );
 }
 
-function Courier({ look, paint, stuck }: { look: Dir | null; paint: number; stuck: boolean }) {
+function Courier({ look, paint, stuck, charge }: { look: Dir | null; paint: number; stuck: boolean; charge: { left: number; max: number } | null }) {
+  // With Low Charge the outer ring is split into one segment per move of charge.
+  const ring = charge ? (
+    Array.from({ length: charge.max }, (_, k) => {
+      const gap = 10;
+      const a0 = (k / charge.max) * 360 + gap / 2 - 90;
+      const a1 = ((k + 1) / charge.max) * 360 - gap / 2 - 90;
+      const p = (a: number): string => `${50 + 43 * Math.cos((a * Math.PI) / 180)} ${50 + 43 * Math.sin((a * Math.PI) / 180)}`;
+      return <path key={k} d={`M${p(a0)}A43 43 0 0 1 ${p(a1)}`} className={k < charge.left ? 'courier-ring' : 'courier-ring spent'} />;
+    })
+  ) : (
+    <circle cx="50" cy="50" r="43" className="courier-ring" style={paint ? { stroke: PAINT_INK[paint - 1] } : undefined} />
+  );
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true">
-      <circle cx="50" cy="50" r="43" className="courier-ring" style={paint ? { stroke: PAINT_INK[paint - 1] } : undefined} />
+      {ring}
       <circle cx="50" cy="50" r="35" className="courier-gap" />
       <circle cx="50" cy="50" r="27" className={stuck ? 'courier-core stuck' : 'courier-core'} />
       {look && (
@@ -435,11 +505,217 @@ function Courier({ look, paint, stuck }: { look: Dir | null; paint: number; stuc
   );
 }
 
+/** A note in marker pen for first-timers: "you", with an arrow to the courier. */
+function HintNote({ at }: { at: number }) {
+  const r = rowOf(at);
+  const c = colOf(at);
+  // Write it on whichever side has room, above unless the courier is on the top row.
+  const left = c >= 4;
+  const above = r >= 1;
+  const cx = c * 100 + 50;
+  const cy = r * 100 + 50;
+  const tx = cx + (left ? -128 : 128);
+  const ty = cy + (above ? -86 : 96);
+  const ex = cx + (left ? -46 : 46);
+  const ey = cy + (above ? -40 : 40);
+  const mx = (tx + ex) / 2 + (left ? 10 : -10);
+  const my = (ty + ey) / 2 + (above ? -18 : 18);
+  const ang = (Math.atan2(ey - my, ex - mx) * 180) / Math.PI;
+  return (
+    <g className="hint-note">
+      <path d={`M${tx + (left ? 34 : -34)} ${ty + (above ? 6 : -14)}Q${mx} ${my} ${ex} ${ey}`} />
+      <path d="M-13 -7L0 0L-12 9" transform={`translate(${ex} ${ey}) rotate(${ang})`} />
+      <text x={tx} y={ty} textAnchor="middle" transform={`rotate(${left ? -6 : 5} ${tx} ${ty})`}>
+        you
+      </text>
+    </g>
+  );
+}
+
 const pct = (i: number): CSSProperties =>
   ({
     '--x': `${colOf(i) * 100}%`,
     '--y': `${rowOf(i) * 100}%`
   }) as CSSProperties;
+
+// ------------------------------------------------------------------ effects
+
+type Fx = { kind: string; at: number; to?: number; color?: string | undefined; delay: number };
+
+const MOVES: ReadonlySet<StepEvent['t']> = new Set([
+  'move',
+  'conveyor',
+  'vent',
+  'reflect',
+  'slide',
+  'repel',
+  'attract',
+  'magnet',
+  'gravity',
+  'tether',
+  'spinRide',
+  'portal',
+  'spring',
+  'ride'
+]);
+
+/** Short-lived marks for what just happened, timed to the courier's walk. */
+function effectsFor(events: StepEvent[], w: World): Fx[] {
+  const out: Fx[] = [];
+  let step = 0;
+  let slideFrom = -1;
+  const STEP = 90;
+  for (const e of events) {
+    const delay = step * STEP;
+    switch (e.t) {
+      case 'collect':
+        out.push({ kind: 'lift', at: e.at, delay });
+        break;
+      case 'portal': {
+        const label = w.portalAt[e.from] as number;
+        const color = PORTAL_INK[label < 2 ? 0 : 1];
+        out.push({ kind: 'ring', at: e.from, color, delay });
+        out.push({ kind: 'ring', at: e.to, color, delay: delay + STEP });
+        break;
+      }
+      case 'slide':
+        if (slideFrom < 0) slideFrom = e.from;
+        out.push({ kind: 'streak', at: e.from, to: e.to, delay });
+        break;
+      case 'collapse':
+        out.push({ kind: 'crumble', at: e.at, delay: delay + STEP });
+        break;
+      case 'paint':
+        out.push({ kind: 'splash', at: e.at, color: PAINT_INK[e.color], delay });
+        break;
+      case 'spring':
+        out.push({ kind: 'coil', at: e.from, delay });
+        break;
+      case 'unlock':
+        out.push({ kind: 'unlock', at: e.at, delay });
+        break;
+      case 'mud':
+        out.push({ kind: 'mud', at: e.at, delay });
+        break;
+      case 'charge':
+        out.push({ kind: 'ring', at: e.at, color: '#e85d04', delay: delay + STEP });
+        break;
+      case 'hatch':
+        out.push({ kind: 'ring', at: e.to, color: '#5d6b2f', delay: delay + STEP });
+        break;
+      case 'fill':
+        out.push({ kind: 'thud', at: e.at, delay: delay + STEP });
+        break;
+      case 'doors':
+        out.push({ kind: 'ring', at: e.at, color: '#56663f', delay });
+        break;
+      default:
+        break;
+    }
+    if (MOVES.has(e.t)) step++;
+  }
+  return out;
+}
+
+function FxArt({ f }: { f: Fx }) {
+  switch (f.kind) {
+    case 'lift':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="30" className="fx-halo" />
+          <g className="fx-cell">
+            <rect x="40" y="16" width="20" height="10" rx="3" className="battery-nub" />
+            <rect x="26" y="24" width="48" height="62" rx="9" className="battery" />
+            <path d="M54 32L38 58h12l-4 22 16-28H50z" className="battery-bolt" />
+          </g>
+        </svg>
+      );
+    case 'streak': {
+      const d = f.to !== undefined ? dirBetween(f.at, f.to) : null;
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true" style={{ overflow: 'visible' }}>
+          <g transform={`rotate(${d ? ROT[d] : 0} 50 50)`}>
+            <path d="M38 120V40M50 130V30M62 120V40" />
+          </g>
+        </svg>
+      );
+    }
+    case 'crumble':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M22 30l18-6 6 16-16 8zM56 22l20 6-4 18-18-4zM24 62l16-4 8 16-18 6zM58 58l18 2 2 18-18-2z" />
+        </svg>
+      );
+    case 'splash':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="36" />
+          {[20, 95, 160, 235, 300].map((a) => (
+            <circle key={a} cx="50" cy="8" r="5" transform={`rotate(${a} 50 50)`} className="fx-drop" />
+          ))}
+        </svg>
+      );
+    case 'coil':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M30 76h40M36 70l28-5-28-5 28-5" />
+        </svg>
+      );
+    case 'unlock':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M38 46V34a12 12 0 0124 0" />
+        </svg>
+      );
+    case 'mud':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          {[200, 250, 290, 340].map((a, k) => (
+            <circle key={a} cx="50" cy="20" r={4 + (k % 2) * 2} transform={`rotate(${a} 50 50)`} className="fx-drop" />
+          ))}
+        </svg>
+      );
+    case 'thud':
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <rect x="12" y="12" width="76" height="76" rx="6" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="34" />
+        </svg>
+      );
+  }
+}
+
+/** A rubber stamp on the plate when you finish. */
+function Stamp({ moves }: { moves: number }) {
+  return (
+    <div className="stamp" aria-hidden="true">
+      <svg viewBox="0 0 300 130">
+        <defs>
+          <filter id="ink" x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n" />
+            <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.1 1.3" result="speckle" />
+            <feComposite in="SourceGraphic" in2="speckle" operator="in" />
+          </filter>
+        </defs>
+        <g filter="url(#ink)">
+          <rect x="6" y="6" width="288" height="118" rx="10" className="stamp-frame" />
+          <rect x="14" y="14" width="272" height="102" rx="6" className="stamp-frame thin" />
+          <text x="150" y="70" textAnchor="middle" className="stamp-word">
+            Solved
+          </text>
+          <text x="150" y="101" textAnchor="middle" className="stamp-sub">
+            in {moves} {moves === 1 ? 'move' : 'moves'}
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 type Props = {
   world: World;
@@ -453,16 +729,19 @@ type Props = {
   showLandings: boolean;
   focus: Action | null;
   reducedMotion: boolean;
+  /** Show the marker note pointing at you (first visit). */
+  hint?: boolean;
   onAction: (a: Action) => void;
   onInspect: (text: string | null) => void;
 };
 
-export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, previews, showLandings, focus, reducedMotion, onAction, onInspect }: Props) {
+export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, previews, showLandings, focus, reducedMotion, hint, onAction, onInspect }: Props) {
   const tiles = useMemo(() => buildTiles(world, state), [world, state]);
   const celebrate = state.solved && events.some((e) => e.t === 'solved') && !reducedMotion;
-  const bursts = reducedMotion ? [] : events.filter((e): e is Extract<StepEvent, { t: 'collect' }> => e.t === 'collect');
+  const fx = reducedMotion ? [] : effectsFor(events, world);
   const [courierAt, setCourierAt] = useState(state.pos);
   const [warping, setWarping] = useState(false);
+  const [leaping, setLeaping] = useState(false);
   const [nudge, setNudge] = useState<Dir | null>(null);
   const timers = useRef<number[]>([]);
 
@@ -480,7 +759,10 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
     points.forEach((p, k) => {
       timers.current.push(
         window.setTimeout(() => {
-          if (p.jump) {
+          if (p.kind === 'spring') {
+            setLeaping(true);
+            timers.current.push(window.setTimeout(() => setLeaping(false), STEP * 2));
+          } else if (p.jump) {
             setWarping(true);
             timers.current.push(window.setTimeout(() => setWarping(false), STEP));
           }
@@ -728,6 +1010,11 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
             <polyline key={k} points={pts} className="peek-path" />
           ))}
         </svg>
+        {hint && (
+          <svg className="overlay notes" viewBox="0 0 700 700" aria-hidden="true">
+            <HintNote at={state.pos} />
+          </svg>
+        )}
 
         {cells.map((c) =>
           c.got ? null : (
@@ -756,15 +1043,44 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
           ) : null
         )}
 
-        {state.crates.map((c, k) => (
-          <div key={`crate${k}`} className="entity crate" style={pct(c)}>
-            <svg viewBox="0 0 100 100" aria-hidden="true">
-              <rect x="12" y="12" width="76" height="76" rx="6" className="crate-box" />
-              <path d="M24 24l52 52M76 24L24 76" className="crate-brace" />
-              <rect x="12" y="12" width="76" height="76" rx="6" className="crate-edge" />
-            </svg>
-          </div>
-        ))}
+        {state.crates.map((c, k) =>
+          world.has.PUCKS ? (
+            <div key={`puck${k}`} className="entity puck" style={pct(c)}>
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <ellipse cx="50" cy="60" rx="34" ry="17" className="puck-side" />
+                <rect x="16" y="46" width="68" height="14" className="puck-side" />
+                <ellipse cx="50" cy="46" rx="34" ry="17" className="puck-top" />
+                <ellipse cx="50" cy="46" rx="20" ry="9" className="puck-ring" />
+              </svg>
+            </div>
+          ) : (
+            <div key={`crate${k}`} className="entity crate" style={pct(c)}>
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <rect x="12" y="12" width="76" height="76" rx="6" className="crate-box" />
+                <path d="M24 24l52 52M76 24L24 76" className="crate-brace" />
+                <rect x="12" y="12" width="76" height="76" rx="6" className="crate-edge" />
+              </svg>
+            </div>
+          )
+        )}
+        {world.tracks.map((_, k) => {
+          const now = shuttleAt(world, k, state.turn);
+          const next = shuttleAt(world, k, state.turn + 1);
+          const d = dirBetween(now, next);
+          return (
+            <div key={`shuttle${k}`} className="entity shuttle" style={pct(now)}>
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <rect x="10" y="10" width="80" height="80" rx="7" className="shuttle-deck" />
+                <path d="M22 22h56v56H22z" className="shuttle-plate" />
+                {d && (
+                  <g transform={`rotate(${ROT[d]} 50 50)`}>
+                    <path d="M38 40l12-12 12 12" className="shuttle-arrow" />
+                  </g>
+                )}
+              </svg>
+            </div>
+          );
+        })}
         {gravityNow && (
           <div className="entity gravity-hint" style={pct(courierAt)}>
             <svg viewBox="0 0 100 100" aria-hidden="true" style={{ transform: `rotate(${ROT[gravityNow]}deg)` }}>
@@ -815,19 +1131,24 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
             ) : null
           )}
 
-        {bursts.map((b, k) => (
-          <div key={`burst${tick}-${k}`} className="entity burst" style={pct(b.at)}>
-            <svg viewBox="0 0 100 100" aria-hidden="true">
-              <circle cx="50" cy="50" r="30" />
-              {[0, 60, 120, 180, 240, 300].map((a) => (
-                <path key={a} d="M50 14v-10" transform={`rotate(${a} 50 50)`} />
-              ))}
-            </svg>
+        {fx.map((f, k) => (
+          <div
+            key={`fx${tick}-${k}`}
+            className={`entity fx fx-${f.kind}`}
+            style={{ ...pct(f.at), ['--d' as string]: `${f.delay}ms`, ['--fx' as string]: f.color ?? '#ffffff' } as CSSProperties}
+          >
+            <FxArt f={f} />
           </div>
         ))}
-        <div className={`entity courier${warping ? ' warping' : ''}`} style={pct(courierAt)}>
+        {state.solved && events.some((e) => e.t === 'solved') && <Stamp moves={state.turn} />}
+        <div className={`entity courier${warping ? ' warping' : ''}${leaping ? ' leaping' : ''}`} style={pct(courierAt)}>
           <div key={tick} className={`courier-inner${reducedMotion || tick === 0 ? '' : ' hop'}${nudge ? ` nudge-${nudge}` : ''}`}>
-            <Courier look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null} paint={state.paint} stuck={state.stuck} />
+            <Courier
+              look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null}
+              paint={state.paint}
+              stuck={state.stuck}
+              charge={world.has.LOW_CHARGE ? { left: state.charge, max: world.chargeMax } : null}
+            />
           </div>
         </div>
       </div>

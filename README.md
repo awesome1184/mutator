@@ -3,11 +3,12 @@
 A daily puzzle for Reddit. Each day you get a 7×7 well plate and the same goal:
 pick up both cells, then reach the exit. What changes is the rules. Every day
 splices two mutations into the physics (Sunday gets three), drawn from a roster
-of 34: gravity that swings around the clock, portals that re-pair every three
+of 38: gravity that swings around the clock, portals that re-pair every three
 moves, floor that cracks behind you, a drone that mirrors you, blight that
-creeps one tile every other move, cells that run away from you, crates to
-push, edges that wrap around, springs, keys and locks, paint barriers, mud,
-and more.
+creeps one tile every other move, cells that run away from you, crates and
+pucks to push, edges that wrap around, springs, keys and locks, paint
+barriers, mud, shuttles across a chasm, an exit that hops between hatches, a
+charge that runs out, and more.
 
 There's no luck involved. The only randomness is in building the day's board.
 After that, the same moves always produce the same result, and everything the
@@ -87,8 +88,8 @@ secret, and the UI didn't fit on a phone. This rebuild:
 - adds forecasts, landing previews and connector lines (portal pairs, plates
   to doors, magnet and cell pulls acting on you, the gravity direction), so
   nothing the world does is hidden;
-- adds seven new mutations: Wraparound, Skittish Cells, Crates, Springs,
-  Paint, Keys & Locks and Mud;
+- adds eleven new mutations: Wraparound, Skittish Cells, Crates, Springs,
+  Paint, Keys & Locks, Mud, Pucks, Shuttles, Hatches and Low Charge;
 - adds a generator that targets a par range per weekday and rejects boards
   where any active mutation doesn't change the best route (checked by removing
   each mutation and re-solving);
@@ -96,8 +97,11 @@ secret, and the UI didn't fit on a phone. This rebuild:
   matters and stays solvable;
 - adds Devvit integration: daily posts, Redis-backed results, leaderboards,
   streaks, votes, flair, comments and an archive;
-- replaces the whole UI with a new design that fits a phone screen without
-  scrolling.
+- replaces the whole UI. Everything is drawn as something on a lab bench:
+  the day's mutations are strips of labelling tape, moves are counted on a
+  printed scale under the plate, the keypad looks like an instrument's, and
+  rules and results come on graph-paper sheets. It fits a phone screen
+  without scrolling.
 
 ## Difficulty
 

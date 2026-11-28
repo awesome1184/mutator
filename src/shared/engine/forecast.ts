@@ -16,6 +16,7 @@ import {
   layerFor,
   portalMode,
   ventsActive,
+  exitFor,
   type BeamLine,
   type World
 } from './world.ts';
@@ -36,7 +37,15 @@ export type TurnInfo = {
   spinAfter: boolean;
   /** Blight spreads at the end of this move. */
   blightAfter: boolean;
+  /** Where the exit is for this move, as a well name (Hatches). */
+  exitAt: string | null;
+  /** Whether the exit is somewhere new on this move (Hatches). */
+  exitMoves: boolean;
 };
+
+function wellName(i: number): string {
+  return `${'ABCDEFG'[Math.floor(i / 7)]}${(i % 7) + 1}`;
+}
 
 export function turnInfo(w: World, turn: number): TurnInfo {
   const h = w.has;
@@ -52,7 +61,9 @@ export function turnInfo(w: World, turn: number): TurnInfo {
     phaseLayer: h.PHASE_LAYERS ? activePhaseLayer(turn) : null,
     vents: h.VENTILATION ? ventsActive(turn) : null,
     spinAfter: w.hubs.length > 0 && (turn + 1) % 3 === 0,
-    blightAfter: h.INFECTION === true && (turn + 1) % 2 === 0
+    blightAfter: h.INFECTION === true && (turn + 1) % 2 === 0,
+    exitAt: h.HATCHES ? wellName(exitFor(w, turn)) : null,
+    exitMoves: h.HATCHES === true && turn > 0 && exitFor(w, turn) !== exitFor(w, turn - 1)
   };
 }
 
@@ -115,6 +126,9 @@ export function courierWaypoints(events: StepEvent[]): Waypoint[] {
       case 'tether':
       case 'spinRide':
         out.push({ to: e.to, kind: e.t, jump: (e.t === 'move' && e.kind === 'phase') || manhattan(e.from, e.to) > 2 });
+        break;
+      case 'ride':
+        out.push({ to: e.to, kind: e.t, jump: false });
         break;
       case 'portal':
       case 'spring':

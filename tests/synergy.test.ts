@@ -313,3 +313,26 @@ test('crates + paint: a crate cannot be pushed through a barrier', () => {
   const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'PAINT'], ...far, start: co(3, 0), crates: [co(3, 1)], paintGates: [{ r: 3, c: 2, color: 1 }], paintPads: [{ r: 5, c: 5, color: 1 }] }));
   assert.equal(step(w, initialState(w), 'R').ok, false);
 });
+
+test('conveyor + pucks: a puck pushed onto a belt turns with it and keeps sliding', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CONVEYOR', 'PUCKS'], ...far, start: co(3, 0), crates: [co(3, 1)], conveyors: [{ r: 3, c: 3, dir: 'D' }] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(6, 3)]);
+});
+
+test('mirror drone + shuttles: the drone never boards a shuttle', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['MIRROR_DRONE', 'SHUTTLES'], ...far, start: co(5, 0), droneStart: co(2, 3), shuttles: [[co(3, 3), co(3, 4), co(3, 5)]] }));
+  const r = step(w, initialState(w), 'U');
+  assert.ok(r.ok);
+  assert.equal(r.state.drone, at(2, 3));
+});
+
+test('low charge + mud: pulling free of mud costs a charge', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LOW_CHARGE', 'MUD'], ...far, start: co(3, 0), mud: [co(3, 1)], charge: 2 }));
+  const r = replay(w, ['R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[2]?.pos, at(3, 1));
+  assert.equal(r.states[2]?.charge, 0);
+});
+

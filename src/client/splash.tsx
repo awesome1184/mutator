@@ -1,5 +1,6 @@
 import './styles.css';
 import '@fontsource-variable/archivo/standard.css';
+import '@fontsource-variable/archivo/standard-italic.css';
 
 import { StrictMode, useEffect, useState, type MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -9,7 +10,8 @@ import { MUTATIONS } from '../shared/engine/mutations.ts';
 import { TIERS } from '../shared/engine/schedule.ts';
 import type { Coord, Puzzle } from '../shared/engine/types.ts';
 import { getApi, type SplashResponse } from './lib/api.ts';
-import { MutationGlyph } from './game/icons.tsx';
+import { Difficulty } from './game/Difficulty.tsx';
+import { Tape } from './game/Tape.tsx';
 import { Stars } from './game/Panels.tsx';
 import { Wordmark } from './game/Wordmark.tsx';
 
@@ -111,7 +113,7 @@ function Splash() {
           <p className="issue">
             <span className="issue-no">#{padNumber(p.number)}</span>
             <span className="issue-date">{prettyDate(p.dateKey)}</span>
-            {tier && <span className={`tier tier-${tier.id}`}>{tier.label}</span>}
+            {tier && <Difficulty tier={tier.id} label={tier.label} />}
           </p>
         )}
       </header>
@@ -120,36 +122,19 @@ function Splash() {
         <div className="sp-body">
           <MiniPlate p={p} />
           <div className="sp-copy">
-            <p className="sp-lede">Get both cells to the exit. Today’s rules:</p>
-            <ul className="sp-muts">
-              {p.mutations.map((m) => (
-                <li key={m} style={{ ['--mut' as string]: MUTATIONS[m].ink }}>
-                  <span className="sp-glyph">
-                    <MutationGlyph id={m} size={16} />
-                  </span>
-                  <span>
-                    <strong>{MUTATIONS[m].name}.</strong> {MUTATIONS[m].short}
-                  </span>
-                </li>
+            <div className="tapes">
+              {p.mutations.map((m, k) => (
+                <Tape key={m} id={m} index={k} voted={p.communityPick === m} />
               ))}
-            </ul>
+            </div>
             <p className="sp-stats">
-              <span>
-                Par <strong>{p.par}</strong>
-              </span>
-              <span>
-                <strong>{data?.solvers ?? 0}</strong> solved
-              </span>
-              {pctPar !== null && (
-                <span>
-                  <strong>{pctPar}%</strong> on par
-                </span>
-              )}
+              Par {p.par}. {data?.solvers ? `${data.solvers} solved so far` : 'Nobody has solved it yet'}
+              {pctPar !== null ? `, ${pctPar}% of them on par.` : '.'}
             </p>
           </div>
         </div>
       ) : (
-        <div className="sp-body sp-wait">{error ? <p>Couldn’t reach the lab. Tap play to try again.</p> : <p>Loading today’s plate…</p>}</div>
+        <div className="sp-body sp-wait">{error ? <p>Couldn’t load today’s plate. Tap play to try again.</p> : <p>Loading today’s plate…</p>}</div>
       )}
 
       <footer className="sp-foot">
@@ -161,9 +146,9 @@ function Splash() {
         ) : data && data.streak > 0 ? (
           <span className="sp-me">{data.streak}-day streak. Keep it going.</span>
         ) : (
-          <span className="sp-me">A new puzzle every day at 00:00 UTC.</span>
+          <span className="sp-me">A new plate every day at 00:00 UTC.</span>
         )}
-        <button type="button" className="btn play" onClick={open}>
+        <button type="button" className="pad play" onClick={open}>
           {data?.stars ? 'See results' : data?.date && data.date !== data.today ? 'Play this day' : 'Play'}
         </button>
       </footer>

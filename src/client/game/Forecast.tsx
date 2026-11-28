@@ -3,7 +3,7 @@ import { forecast, type TurnInfo } from '../../shared/engine/forecast.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import type { MutationId } from '../../shared/engine/types.ts';
 import type { World } from '../../shared/engine/world.ts';
-import { Arrow, MutationGlyph } from './icons.tsx';
+import { Arrow } from './icons.tsx';
 
 const ROWS = 'ABCDEFG';
 
@@ -28,7 +28,8 @@ const ROW_DEFS: Row[] = [
   { id: 'PHASE_LAYERS', label: 'Solid layer', cell: (t) => ({ text: t.phaseLayer === null ? '' : String(t.phaseLayer + 1), on: true }) },
   { id: 'VENTILATION', label: 'Vents', cell: (t) => ({ text: t.vents ? 'on' : 'off', on: !!t.vents }) },
   { id: 'TURNTABLES', label: 'Gears turn after', cell: (t) => ({ text: t.spinAfter ? '↻' : '', on: t.spinAfter }) },
-  { id: 'INFECTION', label: 'Blight grows after', cell: (t) => ({ text: t.blightAfter ? '+1' : '', on: t.blightAfter }) }
+  { id: 'INFECTION', label: 'Blight grows after', cell: (t) => ({ text: t.blightAfter ? '+1' : '', on: t.blightAfter }) },
+  { id: 'HATCHES', label: 'Exit at', cell: (t) => ({ text: t.exitAt ?? '', on: !!t.exitMoves }) }
 ];
 
 export function Forecast({ world, turn, span = 6 }: { world: World; turn: number; span?: number }) {
@@ -52,8 +53,8 @@ export function Forecast({ world, turn, span = 6 }: { world: World; turn: number
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}>
-            <th scope="row" style={{ color: MUTATIONS[r.id].ink }}>
-              <MutationGlyph id={r.id} size={14} />
+            <th scope="row">
+              <i className="fc-swatch" style={{ background: MUTATIONS[r.id].ink }} />
               <span>{r.label}</span>
             </th>
             {turns.map((t, k) => {

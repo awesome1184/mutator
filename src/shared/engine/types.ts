@@ -41,7 +41,11 @@ export type MutationId =
   | 'SPRINGS'
   | 'PAINT'
   | 'KEYS'
-  | 'MUD';
+  | 'MUD'
+  | 'PUCKS'
+  | 'SHUTTLES'
+  | 'HATCHES'
+  | 'LOW_CHARGE';
 
 export type DirTile = Coord & { dir: Dir };
 export type RotTile = Coord & { rot: 1 | -1 };
@@ -97,6 +101,14 @@ export type Puzzle = {
   keys?: Coord[];
   locks?: Coord[];
   mud?: Coord[];
+  /** Extra exit hatches (Hatches). The exit starts at `exit` and moves through these in order. */
+  hatches?: Coord[];
+  /** Shuttle tracks over a chasm (Shuttles), each a straight run of tiles. */
+  shuttles?: Coord[][];
+  /** Charging pads (Low Charge). */
+  chargers?: Coord[];
+  /** How many moves a full charge lasts (Low Charge). */
+  charge?: number;
   droneStart: Coord | null;
   echoStart: Coord | null;
   beam: PulseBeam | null;
@@ -140,6 +152,8 @@ export type GameState = {
   locksOpen: number;
   /** Stuck in mud: the next action only frees you. */
   stuck: boolean;
+  /** Moves of charge left (Low Charge). */
+  charge: number;
   /** -1 untouched, -2 pit filled by a crate, 0 collapsed pit, >0 turns until collapse. */
   decay: Int8Array;
   /** 1 = infected by blight. */
@@ -182,6 +196,10 @@ export type StepEvent =
   | { t: 'collapse'; at: number }
   | { t: 'blight'; at: number }
   | { t: 'spin'; hub: number }
+  | { t: 'ride'; from: number; to: number }
+  | { t: 'shuttle'; index: number; from: number; to: number }
+  | { t: 'hatch'; from: number; to: number }
+  | { t: 'charge'; at: number }
   | { t: 'solved' };
 
 export type StepResult =

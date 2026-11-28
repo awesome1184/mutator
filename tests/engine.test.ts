@@ -6,7 +6,7 @@ import { generatePuzzle } from '../src/shared/engine/generator.ts';
 import { parseActions } from '../src/shared/engine/grid.ts';
 import { initialState, replay, stateKey, step } from '../src/shared/engine/sim.ts';
 import { solve } from '../src/shared/engine/solver.ts';
-import { compileWorld } from '../src/shared/engine/world.ts';
+import { compileWorld, exitFor } from '../src/shared/engine/world.ts';
 import { nextBlight, previewActions } from '../src/shared/engine/forecast.ts';
 import { difficultyOf } from '../src/shared/engine/difficulty.ts';
 import { dayPlan } from '../src/shared/engine/schedule.ts';
@@ -284,4 +284,54 @@ test('mutation pools: never two mild mutations, and Mondays are never mild', asy
     }
     d = addDays(d, 1);
   }
+});
+
+test('pucks slide until something stops them', () => {
+  const p = makePuzzle({ mutations: ['PUCKS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], crates: [co(3, 1)], grid: walls([3, 5]) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 1));
+  assert.deepEqual(r.state.crates, [at(3, 4)]);
+});
+
+test('shuttles carry you across the chasm, and the chasm is closed elsewhere', () => {
+  const p = makePuzzle({ mutations: ['SHUTTLES'], start: co(2, 1), cells: [co(0, 0), co(6, 6)], shuttles: [[co(3, 1), co(3, 2), co(3, 3)]] });
+  const w = compileWorld(p);
+  const r = replay(w, ['D', 'D']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+  assert.equal(r.states[1]?.pos, at(3, 2));
+  assert.equal(r.states[2]?.pos, at(4, 2));
+  const w2 = compileWorld({ ...p, start: co(2, 3) });
+  assert.equal(step(w2, initialState(w2), 'D').ok, false);
+});
+
+test('hatches: the exit moves every 3 moves, and only the open one counts', () => {
+  const p = makePuzzle({ mutations: ['HATCHES'], start: co(3, 0), cells: [co(3, 1), co(3, 2)], exit: co(3, 3), hatches: [co(0, 6)] });
+  const w = compileWorld(p);
+  assert.equal(exitFor(w, 0), at(3, 3));
+  assert.equal(exitFor(w, 3), at(0, 6));
+  assert.equal(exitFor(w, 6), at(3, 3));
+  const r = replay(w, ['R', 'R', 'R']);
+  assert.ok(r.solved);
+  // Arrive one move late and the exit has already moved on.
+  const late = replay(w, ['W', 'R', 'R', 'R']);
+  assert.ok(late.ok);
+  assert.ok(!late.solved);
+});
+
+test('low charge: moves use charge, chargers and cells refill it, empty means stuck', () => {
+  const p = makePuzzle({ mutations: ['LOW_CHARGE'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], chargers: [co(3, 2)], charge: 3 });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[1]?.charge, 2);
+  assert.equal(r.states[2]?.charge, 3);
+  const dry = replay(w, ['D', 'D', 'D']);
+  assert.ok(dry.ok);
+  assert.equal(dry.states[3]?.charge, 0);
+  assert.equal(step(w, dry.states[3]!, 'D').ok, false);
+  const cell = compileWorld({ ...p, cells: [co(3, 1), co(6, 6)], chargers: [] });
+  const c = replay(cell, ['U', 'D', 'R']);
+  assert.equal(c.states[3]?.charge, 3);
 });

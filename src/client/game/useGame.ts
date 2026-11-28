@@ -68,7 +68,7 @@ export function useGame(puzzle: Puzzle, practice: boolean, onSolved: (route: str
   );
 
   const move = useCallback(
-    (a: Action): { ok: boolean; events: StepEvent[] } => {
+    (a: Action): { ok: boolean; events: StepEvent[]; state?: GameState } => {
       const cur = runRef.current;
       const s = cur.states.at(-1) as GameState;
       if (s.solved) return { ok: false, events: [] };
@@ -90,7 +90,7 @@ export function useGame(puzzle: Puzzle, practice: boolean, onSolved: (route: str
       };
       commit(next);
       if (res.state.solved) onSolved(next.route.join(''), next.rewinds);
-      return { ok: true, events: res.events };
+      return { ok: true, events: res.events, state: res.state };
     },
     [world, commit, onSolved]
   );

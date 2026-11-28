@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ArchiveEntry, BoardEntry, DayStats, LeaderboardResponse, Profile, Result, StreakEntry, VoteInfo } from '../../shared/api.ts';
 import { padNumber, prettyDate } from '../../shared/engine/date.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
@@ -33,6 +33,12 @@ export function Countdown({ at }: { at: number }) {
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return <span>{h > 0 ? `${h}h ${m}m` : `${m}m`}</span>;
+}
+
+function ordinal(n: number): string {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 }
 
 export function Histogram({ day, par, mine }: { day: DayStats; par: number; mine: number | null }) {
@@ -211,30 +217,12 @@ export function ResultPanel(p: ResultProps) {
         <Stars n={r.stars} size={30} />
         <p className="verdict">{verdict(r.moves, r.par, r.clean)}</p>
       </div>
+      <p className="result-line">
+        {r.moves} moves against a par of {r.par}
+        {r.rewinds === 0 ? ', with no undos.' : `, with ${r.rewinds} ${r.rewinds === 1 ? 'undo' : 'undos'}.`}
+        {p.myRank ? ` ${ordinal(p.myRank)} of ${p.day.solvers} today.` : ''}
+      </p>
       <RouteMap puzzle={p.puzzle} route={r.route} />
-      <dl className="facts">
-        <div>
-          <dt>Moves</dt>
-          <dd>{r.moves}</dd>
-        </div>
-        <div>
-          <dt>Par</dt>
-          <dd>{r.par}</dd>
-        </div>
-        <div>
-          <dt>Rewinds</dt>
-          <dd>{r.rewinds}</dd>
-        </div>
-        {p.myRank && (
-          <div>
-            <dt>Rank</dt>
-            <dd>
-              {p.myRank}
-              <small> of {p.day.solvers}</small>
-            </dd>
-          </div>
-        )}
-      </dl>
 
       {p.practice && p.official && (
         <p className="note">
@@ -280,7 +268,7 @@ export function ResultPanel(p: ResultProps) {
           Play again for practice
         </button>
         <button type="button" className="link-btn" onClick={p.onRanks}>
-          See today’s board
+          See today’s scores
         </button>
       </div>
 
@@ -313,32 +301,38 @@ export function RanksPanel({ data, me, loading }: { data: LeaderboardResponse | 
   );
 }
 
-export function YouPanel({ me, flairBusy, onFlair, loggedIn }: { me: Profile | null; flairBusy: boolean; onFlair: (on: boolean) => void; loggedIn: boolean }) {
-  if (!me || !loggedIn) return <p className="muted">Log in on Reddit to keep stats and streaks.</p>;
+type YouProps = { me: Profile | null; flairBusy: boolean; onFlair: (on: boolean) => void; loggedIn: boolean; children?: ReactNode };
+
+export function YouPanel({ me, flairBusy, onFlair, loggedIn, children }: YouProps) {
+  if (!me || !loggedIn)
+    return (
+      <div className="you">
+        <p className="you-line">Log in on Reddit to keep your record and a streak.</p>
+        {children}
+      </div>
+    );
   return (
     <div className="you">
-      <dl className="facts">
-        <div>
-          <dt>Solved</dt>
-          <dd>{me.solved}</dd>
-        </div>
-        <div>
-          <dt>On par</dt>
-          <dd>{me.parCount}</dd>
-        </div>
-        <div>
-          <dt>Streak</dt>
-          <dd>{me.streak}</dd>
-        </div>
-        <div>
-          <dt>Best</dt>
-          <dd>{me.best}</dd>
-        </div>
-      </dl>
+      {me.solved === 0 ? (
+        <p className="you-line">Nothing solved yet. Your record starts with today’s plate.</p>
+      ) : (
+        <p className="you-line">
+          You have solved <b>{me.solved}</b> {me.solved === 1 ? 'plate' : 'plates'}, <b>{me.parCount}</b> of them on par.{' '}
+          {me.streak > 0 ? (
+            <>
+              Your streak is <b>{me.streak}</b> {me.streak === 1 ? 'day' : 'days'}
+              {me.best > me.streak ? <>, and your best was {me.best}.</> : ', your best yet.'}
+            </>
+          ) : (
+            <>No streak running. Your best was {me.best} {me.best === 1 ? 'day' : 'days'}.</>
+          )}
+        </p>
+      )}
       <label className="toggle">
         <input type="checkbox" checked={me.flair} disabled={flairBusy} onChange={(e) => onFlair(e.target.checked)} />
         <span>Show my streak as user flair in this community</span>
       </label>
+      {children}
     </div>
   );
 }

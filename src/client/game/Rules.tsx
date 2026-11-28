@@ -1,58 +1,34 @@
 import { ALL_MUTATIONS, MUTATIONS } from '../../shared/engine/mutations.ts';
 import type { MutationId, Puzzle } from '../../shared/engine/types.ts';
 import { DIR_ARROW } from '../../shared/engine/grid.ts';
-import { MutationGlyph } from './icons.tsx';
 import { interactionNotes } from '../../shared/engine/interactions.ts';
-
-export function MutationCard({ id, puzzle }: { id: MutationId; puzzle?: Puzzle }) {
-  const m = MUTATIONS[id];
-  return (
-    <article className="mut-card" style={{ ['--mut' as string]: m.ink }}>
-      <header>
-        <span className="mut-swatch" style={{ background: m.ink, color: m.darkText ? '#1d1b45' : '#fff' }}>
-          <MutationGlyph id={id} size={20} />
-        </span>
-        <h3>{m.name}</h3>
-      </header>
-      <p>{m.rule}</p>
-      {id === 'INFECTION' && puzzle && (
-        <p className="mut-extra">Today’s spread order: {puzzle.blightOrder.map((d) => DIR_ARROW[d]).join(' ')}</p>
-      )}
-      <p className="mut-tip">{m.tip}</p>
-    </article>
-  );
-}
+import { Tape } from './Tape.tsx';
 
 export function Rules({ puzzle, seen }: { puzzle: Puzzle; seen: MutationId[] }) {
+  const notes = interactionNotes(puzzle.mutations);
   return (
     <div className="rules">
-      <section className="basics">
-        <p className="lede">Pick up both cells, then reach the exit. Every day the rules change.</p>
-        <ul className="plain-list">
-          <li>Swipe on the board, tap a neighbouring well, or use the pad. Arrow keys and WASD work too, and space holds.</li>
-          <li>Hold skips your move, but the world still takes its turn.</li>
-          <li>Moves that would go nowhere are refused and cost nothing.</li>
-          <li>Par is the shortest possible solution, worked out by a solver that checks every route.</li>
-          <li>Your first solve of the day is the one that counts. Undo and restart are free, but the board keeps count of them.</li>
-        </ul>
-      </section>
+      <p className="lede">Pick up both cells, then reach the exit. The rules change every day. Par is the fewest moves it can be done in.</p>
 
-      <h3 className="rules-sub">Today’s mutations</h3>
-      <div className="mut-list">
-        {puzzle.mutations.map((id) => (
-          <MutationCard key={id} id={id} puzzle={puzzle} />
-        ))}
-      </div>
+      <h3>Today</h3>
+      {puzzle.mutations.map((id, k) => (
+        <section className="rule" key={id}>
+          <Tape id={id} index={k} compact voted={puzzle.communityPick === id} />
+          <p>{MUTATIONS[id].rule}</p>
+          {id === 'INFECTION' && <p>Today it spreads in this order: {puzzle.blightOrder.map((d) => DIR_ARROW[d]).join(' ')}</p>}
+          <p className="tip">{MUTATIONS[id].tip}</p>
+        </section>
+      ))}
 
-      {interactionNotes(puzzle.mutations).length > 0 && (
+      {notes.length > 0 && (
         <>
-          <h3 className="rules-sub">How they combine</h3>
-          <ul className="plain-list combos">
-            {interactionNotes(puzzle.mutations).map((n) => (
+          <h3>Together</h3>
+          <ul className="notes">
+            {notes.map((n) => (
               <li key={n.pair.join('+')}>
-                <strong>
-                  {MUTATIONS[n.pair[0]].name} × {MUTATIONS[n.pair[1]].name}.
-                </strong>{' '}
+                <b>
+                  {MUTATIONS[n.pair[0]].name} and {MUTATIONS[n.pair[1]].name}.
+                </b>{' '}
                 {n.text}
               </li>
             ))}
@@ -60,30 +36,41 @@ export function Rules({ puzzle, seen }: { puzzle: Puzzle; seen: MutationId[] }) 
         </>
       )}
 
-      <h3 className="rules-sub">Order of a move</h3>
+      <h3>Playing</h3>
+      <dl className="keys">
+        <dt>Move</dt>
+        <dd>Swipe the plate, tap a well next to you, or use the keypad. Arrow keys and WASD work too.</dd>
+        <dt>Hold</dt>
+        <dd>Space, or the middle key. You stay put and the board still takes its turn.</dd>
+        <dt>Undo</dt>
+        <dd>Z, and R to restart. Both are free, but the scores count them.</dd>
+        <dt>Look</dt>
+        <dd>Hover over a well, or press and hold one, to read what is in it.</dd>
+      </dl>
+      <p>A move that would go nowhere is refused and costs nothing. Your first solve of the day is the one that counts.</p>
+
+      <h3>Order of a move</h3>
       <ol className="turn-order">
         <li>You move.</li>
         <li>The echo repeats your previous move and the drone mirrors this one.</li>
-        <li>The tile you landed on acts: portal, belt, vent, prism, rotor, then ice.</li>
+        <li>The well you landed on acts: portal, belt, vent, prism, rotor, spring, then ice.</li>
         <li>Charged cells push or pull, then magnets pull.</li>
-        <li>Gravity pulls.</li>
-        <li>The tether snaps you back.</li>
-        <li>The board updates: orbits, afterimage, cracks, blight, gears.</li>
+        <li>Gravity pulls, and the tether snaps you back.</li>
+        <li>The board moves on: orbits, afterimage, cracks, blight, gears, shuttles, then the exit hatch.</li>
       </ol>
 
-      <h3 className="rules-sub">Catalogue</h3>
-      <p className="muted">Mutations you have solved a puzzle with. {seen.length} of {ALL_MUTATIONS.length}.</p>
-      <div className="catalogue">
-        {ALL_MUTATIONS.map((id) => {
-          const got = seen.includes(id);
-          return (
-            <span key={id} className={got ? 'cat got' : 'cat'} title={MUTATIONS[id].short} style={{ ['--mut' as string]: MUTATIONS[id].ink }}>
-              <MutationGlyph id={id} size={16} />
-              {MUTATIONS[id].name}
-            </span>
-          );
-        })}
-      </div>
+      <h3>Catalogue</h3>
+      <p className="small muted">
+        Mutations you have solved a puzzle with: {seen.length} of {ALL_MUTATIONS.length}.
+      </p>
+      <ul className="catalogue">
+        {ALL_MUTATIONS.map((id) => (
+          <li key={id} className={seen.includes(id) ? 'got' : undefined} title={MUTATIONS[id].short}>
+            <i style={{ background: MUTATIONS[id].ink }} />
+            {MUTATIONS[id].name}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
