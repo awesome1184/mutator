@@ -579,6 +579,89 @@ p {
   stroke-dasharray: none;
   opacity: 1;
 }
+.spring {
+  fill: none;
+  stroke: #d9480f;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.spring-top {
+  fill: #d9480f;
+  stroke: none;
+}
+.spring-base {
+  stroke: #9b3009;
+  stroke-width: 7;
+}
+.splash {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0.9;
+}
+.key {
+  fill: none;
+  stroke: #b7860b;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+.lock-plate {
+  fill: #e9dcb2;
+  stroke: #b7860b;
+  stroke-width: 4;
+}
+.lock-shackle {
+  fill: none;
+  stroke: #6b4f08;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.lock-body {
+  fill: #b7860b;
+}
+.lock-hole {
+  stroke: #3a2b04;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.lock.open {
+  opacity: 0.35;
+}
+.lock.open .lock-body {
+  fill: none;
+  stroke: #b7860b;
+  stroke-width: 4;
+  stroke-dasharray: 5 5;
+}
+.mud path {
+  fill: #7a5230;
+}
+.mud .mud-wet {
+  fill: #9a7048;
+}
+.mud-bubble {
+  fill: none;
+  stroke: #a77d52;
+  stroke-width: 2.5;
+}
+.barrier rect {
+  fill: currentColor;
+  fill-opacity: 0.2;
+  stroke: currentColor;
+  stroke-width: 5;
+}
+.barrier path {
+  stroke: currentColor;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.barrier.pass rect {
+  fill-opacity: 0.06;
+  stroke-dasharray: 6 6;
+}
+.barrier.pass path {
+  opacity: 0.25;
+}
 .door rect {
   fill: #56663f;
   stroke: #3a4628;
@@ -784,24 +867,29 @@ p {
   stroke-dasharray: none;
   stroke-width: 6;
 }
-.courier-halo {
-  fill: #fff;
-  stroke: var(--courier);
-  stroke-width: 5;
-}
-.courier-body {
-  fill: var(--courier);
-  stroke: var(--courier-edge);
-  stroke-width: 4;
-}
-.pupil {
-  fill: var(--ink);
-}
-.courier-mouth {
+.courier-ring {
   fill: none;
-  stroke: var(--ink);
-  stroke-width: 4;
+  stroke: var(--courier);
+  stroke-width: 7;
+}
+.courier-gap {
+  fill: #fff;
+}
+.courier-core {
+  fill: var(--courier);
+}
+.courier-core.stuck {
+  fill: #c2461a;
+  stroke: #7a5230;
+  stroke-width: 5;
+  stroke-dasharray: 6 5;
+}
+.courier-facing {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 6;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .courier {
   animation: bob 1.6s ease-in-out infinite;
@@ -844,6 +932,24 @@ p {
 
 .st-cells span {
   margin-left: 4px;
+}
+
+.st-keys,
+.st-paint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--on-bench-soft);
+  font-weight: 600;
+}
+.st-keys {
+  color: #f2cf6b;
+}
+.st-paint i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--on-bench-soft);
 }
 
 .cap {
@@ -1435,21 +1541,6 @@ p {
   font-size: 13.5px;
 }
 
-.new-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.badge-chip {
-  background: var(--cell);
-  color: #2b2000;
-  font-weight: 800;
-  font-size: 13px;
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
 .streak-line strong {
   font-size: 20px;
   font-weight: 900;
@@ -1684,40 +1775,6 @@ p {
 }
 
 /* you */
-.badges {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.badges li {
-  display: flex;
-  flex-direction: column;
-  padding: 7px 9px;
-  border-radius: 6px;
-  background: var(--well);
-  color: var(--ink-soft);
-  font-size: 12.5px;
-}
-
-.badges li strong {
-  color: var(--ink-soft);
-  font-size: 13.5px;
-}
-
-.badges li.got {
-  background: #fff;
-  box-shadow: inset 0 0 0 2px var(--ink);
-  color: var(--ink);
-}
-
-.badges li.got strong {
-  color: var(--ink);
-}
-
 /* archive */
 .archive {
   list-style: none;

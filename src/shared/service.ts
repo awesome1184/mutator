@@ -110,7 +110,7 @@ export function resolveDate(env: Env, requested: unknown): string {
 // ---------------------------------------------------------------------------
 
 function emptyProfile(): Profile {
-  return { solved: 0, stars: 0, parCount: 0, cleanCount: 0, streak: 0, best: 0, last: null, seen: [], badges: [], flair: false };
+  return { solved: 0, stars: 0, parCount: 0, cleanCount: 0, streak: 0, best: 0, last: null, seen: [], flair: false };
 }
 
 export async function getProfile(env: Env, name: string): Promise<Profile> {
@@ -126,10 +126,8 @@ export async function getProfile(env: Env, name: string): Promise<Profile> {
   p.flair = raw.flair === '1';
   try {
     p.seen = JSON.parse(raw.seen ?? '[]') as MutationId[];
-    p.badges = JSON.parse(raw.badges ?? '[]') as string[];
   } catch {
     p.seen = [];
-    p.badges = [];
   }
   const today = todayKey(env.now());
   const streak = Number(raw.streak ?? 0);
@@ -147,7 +145,6 @@ async function saveProfile(env: Env, name: string, p: Profile): Promise<void> {
     best: String(p.best),
     last: p.last ?? '',
     seen: JSON.stringify(p.seen),
-    badges: JSON.stringify(p.badges),
     flair: p.flair ? '1' : '0'
   });
 }
@@ -296,26 +293,6 @@ export async function getState(env: Env, requestedDate: unknown): Promise<StateR
   };
 }
 
-function awardBadges(p: Profile, r: Result, puzzle: Puzzle): string[] {
-  const earned: string[] = [];
-  const give = (id: string, cond: boolean): void => {
-    if (cond && !p.badges.includes(id)) {
-      p.badges.push(id);
-      earned.push(id);
-    }
-  };
-  give('first', true);
-  give('par', r.moves <= r.par);
-  give('clean', r.clean);
-  give('spotless', r.clean && r.moves <= r.par);
-  give('week', p.streak >= 7);
-  give('month', p.streak >= 30);
-  give('anomaly', puzzle.mutations.length >= 3);
-  give('cat10', p.seen.length >= 10);
-  give('cat27', p.seen.length >= ALL_MUTATIONS.length);
-  return earned;
-}
-
 export async function submit(env: Env, req: SubmitRequest): Promise<SubmitResponse> {
   const date = resolveDate(env, req.date);
   const puzzle = await loadPuzzle(env, date);
@@ -328,7 +305,6 @@ export async function submit(env: Env, req: SubmitRequest): Promise<SubmitRespon
     me: env.user.name ? await getProfile(env, env.user.name) : null,
     day: await getDayStats(env, date),
     board: await getBoard(env, date, puzzle.par),
-    newBadges: [],
     puzzle: null,
     error
   });
@@ -363,13 +339,11 @@ export async function submit(env: Env, req: SubmitRequest): Promise<SubmitRespon
       me: null,
       day: await getDayStats(env, date),
       board: await getBoard(env, date, puzzle.par),
-      newBadges: [],
-      puzzle
+        puzzle
     };
   }
 
   const firstSolve = (await env.kv.hSetNX(K.results(date), name, JSON.stringify(result))) === 1;
-  let newBadges: string[] = [];
   let me = await getProfile(env, name);
   let official = result;
   if (firstSolve) {
@@ -398,7 +372,6 @@ export async function submit(env: Env, req: SubmitRequest): Promise<SubmitRespon
     if (result.moves <= puzzle.par) me.parCount += 1;
     if (result.clean) me.cleanCount += 1;
     for (const m of puzzle.mutations) if (!me.seen.includes(m)) me.seen.push(m);
-    newBadges = awardBadges(me, result, puzzle);
     await saveProfile(env, name, me);
     me = await getProfile(env, name);
   } else {
@@ -414,7 +387,6 @@ export async function submit(env: Env, req: SubmitRequest): Promise<SubmitRespon
     me,
     day: await getDayStats(env, date),
     board: await getBoard(env, date, puzzle.par),
-    newBadges,
     puzzle
   };
 }

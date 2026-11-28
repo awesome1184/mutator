@@ -267,3 +267,49 @@ test('blight cannot grow into water', () => {
   assert.equal(r.states[4]?.blight[at(0, 2)], 0);
   assert.equal(r.states[4]?.blight[at(2, 3)], 1);
 });
+
+test('gravity + springs: falling onto a spring launches you further down', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['GRAVITY', 'SPRINGS'], ...far, start: co(1, 3), springs: [co(2, 3)] }));
+  const r = step(w, initialState(w), 'W');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(4, 3));
+});
+
+test('conveyor + mud: a belt that pushes you into mud stops there', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CONVEYOR', 'MUD'], ...far, start: co(3, 0), conveyors: [{ r: 3, c: 1, dir: 'R' }, { r: 3, c: 2, dir: 'R' }], mud: [co(3, 2)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 2));
+});
+
+test('ice + mud: mud stops a slide', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRYO_SLICK', 'MUD'], ...far, start: co(3, 0), ice: [co(3, 1), co(3, 2)], mud: [co(3, 3)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 3));
+});
+
+test('crates cannot open locks or pass paint barriers', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'KEYS'], ...far, start: co(3, 0), crates: [co(3, 1)], locks: [co(3, 2)], keys: [co(5, 5)] }));
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+});
+
+test('ice + springs: a slide that hits a spring is thrown onward', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRYO_SLICK', 'SPRINGS'], ...far, start: co(3, 0), ice: [co(3, 1)], springs: [co(3, 2)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 4));
+});
+
+test('mirror drone + paint: the drone never crosses a barrier, whatever colour you are', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['MIRROR_DRONE', 'PAINT'], ...far, start: co(4, 4), droneStart: co(4, 2), paintPads: [{ r: 4, c: 5, color: 0 }], paintGates: [{ r: 4, c: 1, color: 0 }] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.paint, 1);
+  assert.equal(r.state.drone, at(4, 2));
+});
+
+test('crates + paint: a crate cannot be pushed through a barrier', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'PAINT'], ...far, start: co(3, 0), crates: [co(3, 1)], paintGates: [{ r: 3, c: 2, color: 1 }], paintPads: [{ r: 5, c: 5, color: 1 }] }));
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+});

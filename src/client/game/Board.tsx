@@ -22,6 +22,8 @@ const ROWS = 'ABCDEFG';
 const GATE_INK = ['#E8579B', '#1F6FD1'];
 const PORTAL_INK = ['#14A3C7', '#E07A10'];
 const PORTAL_LABEL = 'ABCD';
+export const PAINT_INK = ['#1C9C5A', '#8B4FD9'];
+const PAINT_WORD = ['green', 'violet'];
 const ROT: Record<Dir, number> = { U: 0, R: 90, D: 180, L: 270 };
 const DIR_WORD: Record<Dir, string> = { U: 'up', R: 'right', D: 'down', L: 'left' };
 
@@ -36,7 +38,12 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
   if (!t) return '';
   const out: string[] = [];
   const where = `${ROWS[rowOf(i)]}${colOf(i) + 1}`;
-  if (s.pos === i) out.push('You. Grab both cells, then reach the exit.');
+  if (s.pos === i) {
+    out.push('You. Grab both cells, then reach the exit.');
+    if (s.stuck) out.push('Stuck in mud: your next move only pulls you free.');
+    if (s.paint) out.push(`You are ${PAINT_WORD[s.paint - 1]}.`);
+    if (s.keys) out.push(`Holding ${s.keys} ${s.keys === 1 ? 'key' : 'keys'}.`);
+  }
   for (const k of [0, 1]) {
     if (s.got & (1 << k)) continue;
     if (cellAt(w, s, k) === i) {
@@ -84,6 +91,15 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
   if (t.vent) out.push(`Vent, ${t.vent.live ? 'blowing this move' : 'off this move'}. Pushes you 1 tile ${DIR_WORD[t.vent.dir]} on odd moves.`);
   if (t.phase) out.push(`Layer ${t.phase.layer + 1} block, ${t.phase.solid ? 'solid right now' : 'open right now'}.`);
   if (t.rotor) out.push(`Rotor. Twists your next move ${t.rotor > 0 ? 'clockwise' : 'anticlockwise'}.`);
+  if (t.spring) out.push('Spring. Land on it and it throws you 2 more tiles the way you were going, over anything in between.');
+  if (t.splash !== null) out.push(`${PAINT_WORD[t.splash] === 'green' ? 'Green' : 'Violet'} paint. Walk onto it to turn ${PAINT_WORD[t.splash]}.`);
+  if (t.barrier)
+    out.push(
+      `${t.barrier.color === 0 ? 'Green' : 'Violet'} barrier. Only lets you through while you are ${PAINT_WORD[t.barrier.color]}${t.barrier.pass ? ', which you are' : ''}.`
+    );
+  if (t.key) out.push('Key. Walk onto it to pick it up. Any key opens any lock.');
+  if (t.lock) out.push(t.lock.open ? 'Lock, opened. Plain floor now.' : 'Lock. Solid unless you hold a key; walking into it uses one and opens it for good.');
+  if (t.mud) out.push('Mud. Stops you dead, and your next move is spent pulling free.');
   if (t.pit) out.push(w.has.CRATES ? 'Pit. Nothing can enter it, but a pushed crate will fill it.' : 'Pit. Nothing can enter it.');
   if (t.filled) out.push('A crate filled this pit. It is solid floor now.');
   else if (t.fragile) out.push('Cracked floor. It falls in once you step off it.');
@@ -114,6 +130,12 @@ type TileView = {
   vent: { dir: Dir; live: boolean } | null;
   phase: { layer: number; solid: boolean } | null;
   rotor: number;
+  spring: boolean;
+  splash: number | null;
+  barrier: { color: number; pass: boolean } | null;
+  key: boolean;
+  lock: { open: boolean } | null;
+  mud: boolean;
   portal: { label: number; group: number; partner: number } | null;
   fragile: boolean;
   pit: boolean;
@@ -154,6 +176,12 @@ function buildTiles(w: World, s: GameState): TileView[] {
       vent: (L.vent[i] as number) >= 0 ? { dir: DIRS[L.vent[i] as number] as Dir, live: vLive } : null,
       phase: (L.phase[i] as number) >= 0 ? { layer: L.phase[i] as number, solid: L.phase[i] === layer } : null,
       rotor: L.rotor[i] as number,
+      spring: L.spring[i] === 1,
+      splash: (L.paintPad[i] as number) >= 0 ? (L.paintPad[i] as number) : null,
+      barrier: (L.paintGate[i] as number) >= 0 ? { color: L.paintGate[i] as number, pass: s.paint === (L.paintGate[i] as number) + 1 } : null,
+      key: (w.keyAt[i] as number) >= 0 && !(s.keysTaken & (1 << (w.keyAt[i] as number))),
+      lock: (w.lockAt[i] as number) >= 0 ? { open: (s.locksOpen & (1 << (w.lockAt[i] as number))) !== 0 } : null,
+      mud: L.mud[i] === 1,
       portal: label >= 0 ? { label, group: mode === 0 ? (label < 2 ? 0 : 1) : label % 2 === 0 ? 0 : 1, partner: portalPartner(label, mode) } : null,
       fragile: w.fragile[i] === 1 && s.decay[i] !== 0 && s.decay[i] !== -2,
       filled: s.decay[i] === -2,
@@ -227,6 +255,54 @@ function Tile({ t }: { t: TileView }) {
       )}
 
       {t.ice && <path d="M30 34l12-12M56 70l14-14M60 32l6-6" className="ice-glint" />}
+
+      {t.mud && (
+        <g className="mud">
+          <path d="M16 52c2-12 16-16 28-14 10-6 26-3 32 4 10 2 12 12 6 18 2 10-10 16-26 14-8 6-26 6-32-2-10-2-12-12-8-20z" />
+          <ellipse cx="44" cy="54" rx="14" ry="6" className="mud-wet" />
+          <circle cx="64" cy="62" r="3.5" className="mud-bubble" />
+          <circle cx="30" cy="62" r="2.5" className="mud-bubble" />
+        </g>
+      )}
+
+      {t.splash !== null && (
+        <g className="splash" style={{ color: PAINT_INK[t.splash] }}>
+          <path d="M50 28c7 0 9 7 15 6 7-1 10 6 6 11 6 4 5 13-2 15 1 8-7 12-13 8-5 6-14 4-15-3-8 1-13-7-8-13-6-5-3-14 5-14-1-6 5-10 12-10z" />
+          <circle cx="76" cy="30" r="4" />
+          <circle cx="24" cy="70" r="3" />
+        </g>
+      )}
+
+      {t.spring && (
+        <g className="spring">
+          <path d="M30 76h40" className="spring-base" />
+          <path d="M36 70l28-7-28-7 28-7-28-7 28-7" />
+          <rect x="28" y="26" width="44" height="9" rx="4" className="spring-top" />
+        </g>
+      )}
+
+      {t.key && (
+        <g className="key">
+          <circle cx="36" cy="50" r="13" />
+          <path d="M49 50h30M70 50v11M79 50v8" />
+        </g>
+      )}
+
+      {t.lock && (
+        <g className={t.lock.open ? 'lock open' : 'lock'}>
+          {!t.lock.open && <rect x="12" y="12" width="76" height="76" rx="12" className="lock-plate" />}
+          <path d={t.lock.open ? 'M38 46V34a12 12 0 0124 0' : 'M38 48V38a12 12 0 0124 0v10'} className="lock-shackle" />
+          <rect x="30" y="46" width="40" height="30" rx="6" className="lock-body" />
+          {!t.lock.open && <path d="M50 56v9" className="lock-hole" />}
+        </g>
+      )}
+
+      {t.barrier && (
+        <g className={t.barrier.pass ? 'barrier pass' : 'barrier'} style={{ color: PAINT_INK[t.barrier.color] }}>
+          <rect x="12" y="12" width="76" height="76" rx="10" />
+          <path d="M14 46L46 14M14 78L78 14M28 86L86 28M60 86l26-26" />
+        </g>
+      )}
 
       {t.conv && (
         <g transform={`rotate(${ROT[t.conv]} 50 50)`} className="conv">
@@ -344,18 +420,17 @@ function Tile({ t }: { t: TileView }) {
   );
 }
 
-function Courier({ look }: { look: Dir | null }) {
-  const dx = look === 'R' ? 4 : look === 'L' ? -4 : 0;
-  const dy = look === 'D' ? 4 : look === 'U' ? -4 : 0;
+function Courier({ look, paint, stuck }: { look: Dir | null; paint: number; stuck: boolean }) {
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true">
-      <circle cx="50" cy="50" r="47" className="courier-halo" />
-      <path d="M50 12c22 0 36 16 36 37 0 24-15 39-36 39S14 73 14 49c0-21 14-37 36-37z" className="courier-body" />
-      <ellipse cx={38 + dx} cy={45 + dy} rx="9" ry="11" fill="#fff" />
-      <ellipse cx={62 + dx} cy={45 + dy} rx="9" ry="11" fill="#fff" />
-      <circle cx={39 + dx * 1.5} cy={46 + dy * 1.5} r="4.8" className="pupil" />
-      <circle cx={63 + dx * 1.5} cy={46 + dy * 1.5} r="4.8" className="pupil" />
-      <path d="M41 70q9 6 18 0" className="courier-mouth" />
+      <circle cx="50" cy="50" r="43" className="courier-ring" style={paint ? { stroke: PAINT_INK[paint - 1] } : undefined} />
+      <circle cx="50" cy="50" r="35" className="courier-gap" />
+      <circle cx="50" cy="50" r="27" className={stuck ? 'courier-core stuck' : 'courier-core'} />
+      {look && (
+        <g transform={`rotate(${ROT[look]} 50 50)`}>
+          <path d="M41 50l9-11 9 11" className="courier-facing" />
+        </g>
+      )}
     </svg>
   );
 }
@@ -752,7 +827,7 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
         ))}
         <div className={`entity courier${warping ? ' warping' : ''}`} style={pct(courierAt)}>
           <div key={tick} className={`courier-inner${reducedMotion || tick === 0 ? '' : ' hop'}${nudge ? ` nudge-${nudge}` : ''}`}>
-            <Courier look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null} />
+            <Courier look={lastDir && lastDir !== 'W' ? (lastDir as Dir) : null} paint={state.paint} stuck={state.stuck} />
           </div>
         </div>
       </div>

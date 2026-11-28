@@ -192,6 +192,30 @@ const GLYPHS: Record<MutationId, ReactElement> = {
       <rect x="4" y="4" width="16" height="16" rx="1.5" />
       <path d="M4 4l16 16M20 4L4 20" />
     </g>
+  ),
+  SPRINGS: (
+    <g {...P}>
+      <path d="M5 20h14M7 16l10-2-10-2 10-2-10-2" />
+      <path d="M6 5h12" />
+    </g>
+  ),
+  PAINT: (
+    <g {...P}>
+      <path d="M10 3c3 4 5 7 5 10a5 5 0 01-10 0c0-3 2-6 5-10z" />
+      <path d="M17 11c1.5 2 2.5 3.5 2.5 5a2.5 2.5 0 01-5 0" />
+    </g>
+  ),
+  KEYS: (
+    <g {...P}>
+      <circle cx="8" cy="12" r="4" />
+      <path d="M12 12h9M18 12v3M21 12v2" />
+    </g>
+  ),
+  MUD: (
+    <g {...P}>
+      <path d="M3 17c0-2 3-3 6-3 1-1 5-1 7 0 3 0 5 1 5 3s-4 3-9 3-9-1-9-3z" />
+      <path d="M9 9a2 2 0 100-.01M15 6a1.5 1.5 0 100-.01" />
+    </g>
   )
 };
 

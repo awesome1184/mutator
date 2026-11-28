@@ -26,7 +26,6 @@ export type Profile = {
   last: string | null;
   /** Mutations seen in solved puzzles. */
   seen: MutationId[];
-  badges: string[];
   flair: boolean;
 };
 
@@ -87,7 +86,6 @@ export type SubmitResponse = {
   me: Profile | null;
   day: DayStats;
   board: { top: BoardEntry[]; mine: BoardEntry | null };
-  newBadges: string[];
   /** The full puzzle including the par route, sent once solved. */
   puzzle: Puzzle | null;
   error?: string;

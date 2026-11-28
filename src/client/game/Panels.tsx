@@ -3,7 +3,7 @@ import type { ArchiveEntry, BoardEntry, DayStats, LeaderboardResponse, Profile, 
 import { padNumber, prettyDate } from '../../shared/engine/date.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import type { MutationId, Puzzle } from '../../shared/engine/types.ts';
-import { BADGES, verdict } from '../../shared/scoring.ts';
+import { verdict } from '../../shared/scoring.ts';
 import { courierWaypoints } from '../../shared/engine/forecast.ts';
 import { colOf, parseActions, rowOf, toIdx } from '../../shared/engine/grid.ts';
 import { replay } from '../../shared/engine/sim.ts';
@@ -190,7 +190,6 @@ type ResultProps = {
   day: DayStats;
   myRank: number | null;
   vote: VoteInfo | null;
-  newBadges: string[];
   nextAt: number;
   loggedIn: boolean;
   onVote: (m: MutationId) => void;
@@ -242,18 +241,6 @@ export function ResultPanel(p: ResultProps) {
         </p>
       )}
 
-      {p.newBadges.length > 0 && (
-        <div className="new-badges">
-          {p.newBadges.map((id) => {
-            const b = BADGES.find((x) => x.id === id);
-            return b ? (
-              <span key={id} className="badge-chip">
-                {b.title}
-              </span>
-            ) : null;
-          })}
-        </div>
-      )}
 
       {p.me && p.me.streak > 0 && (
         <p className="streak-line">
@@ -347,15 +334,6 @@ export function YouPanel({ me, flairBusy, onFlair, loggedIn }: { me: Profile | n
           <dd>{me.best}</dd>
         </div>
       </dl>
-      <h3 className="rules-sub">Badges</h3>
-      <ul className="badges">
-        {BADGES.map((b) => (
-          <li key={b.id} className={me.badges.includes(b.id) ? 'got' : undefined}>
-            <strong>{b.title}</strong>
-            <span>{b.how}</span>
-          </li>
-        ))}
-      </ul>
       <label className="toggle">
         <input type="checkbox" checked={me.flair} disabled={flairBusy} onChange={(e) => onFlair(e.target.checked)} />
         <span>Show my streak as user flair in this community</span>

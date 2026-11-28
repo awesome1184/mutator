@@ -33,6 +33,10 @@ export const TIERS: Record<number, Tier> = {
 /** PAYLOAD_MASS only matters next to a force, so it is never a primary. */
 const PRIMARY_POOL: readonly MutationId[] = ALL_MUTATIONS.filter((m) => m !== 'PAYLOAD_MASS');
 
+export function isMild(m: MutationId): boolean {
+  return MUTATIONS[m].pool === 'mild';
+}
+
 export function clashes(a: MutationId, b: MutationId): boolean {
   return !!MUTATIONS[a].clashes?.includes(b) || !!MUTATIONS[b].clashes?.includes(a);
 }
@@ -77,7 +81,9 @@ export function dayPlan(dateKey: string): DayPlan {
   if (tier.slots === 3) {
     for (let off = 13; off < 13 + PRIMARY_POOL.length; off++) {
       const t = rosterAt(dayIndex, off);
-      if (t !== primary && !(primary && clashes(primary, t))) {
+      // Never two mild mutations in one puzzle.
+      const bothMild = primary !== null && isMild(primary) && isMild(t);
+      if (t !== primary && !(primary && clashes(primary, t)) && !bothMild) {
         tertiary = t;
         break;
       }
@@ -92,15 +98,22 @@ export function dayPlan(dateKey: string): DayPlan {
 
   const hostPresent = fixed.some((m) => MUTATIONS.PAYLOAD_MASS.hosts?.includes(m));
   const clash = (m: MutationId): boolean => fixed.some((f) => clashes(f, m));
+  // Hidden pools: at most one mild mutation per puzzle, and none on Mondays.
+  const mildTaken = tier.slots === 1 || fixed.some(isMild);
   const pool = ALL_MUTATIONS.filter(
-    (m) => !avoid.has(m) && !clash(m) && (m !== 'PAYLOAD_MASS' || hostPresent) && !(tier.slots === 1 && m === 'PAYLOAD_MASS')
+    (m) =>
+      !avoid.has(m) &&
+      !clash(m) &&
+      !(mildTaken && isMild(m)) &&
+      (m !== 'PAYLOAD_MASS' || hostPresent) &&
+      !(tier.slots === 1 && m === 'PAYLOAD_MASS')
   );
   const rng = new SeededRng(`mutator:candidates:${dateKey}`);
   let candidates = rng.shuffle(pool).slice(0, 3);
   if (tier.slots === 1) {
-    // Monday's vote always includes the roster mutation for the day.
+    // Monday's vote includes the roster mutation for the day, if it is a core one.
     const rostered = rosterAt(dayIndex);
-    candidates = [rostered, ...candidates.filter((m) => m !== rostered)].slice(0, 3);
+    if (!isMild(rostered)) candidates = [rostered, ...candidates.filter((m) => m !== rostered)].slice(0, 3);
   }
 
   return { dateKey, number, weekday, tier, primary, tertiary, candidates };

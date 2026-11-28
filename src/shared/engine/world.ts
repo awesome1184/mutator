@@ -23,6 +23,11 @@ export type Layer = {
   phase: Int8Array;
   /** 0 none, ±1 quarter turn. */
   rotor: Int8Array;
+  spring: Uint8Array;
+  /** -1 none, else paint colour 0/1. */
+  paintPad: Int8Array;
+  paintGate: Int8Array;
+  mud: Uint8Array;
   /** 1 when the tile can never crumble / be blighted. */
   special: Uint8Array;
 };
@@ -39,6 +44,9 @@ export type World = {
   cellTiles: Uint8Array;
   /** Cracked floor that crumbles under Decay. */
   fragile: Uint8Array;
+  /** Key / lock index per tile, or -1 (Keys & Locks). */
+  keyAt: Int8Array;
+  lockAt: Int8Array;
   /** portalAt[i] = label 0..3 or -1. */
   portalAt: Int8Array;
   portalPos: number[];
@@ -67,6 +75,10 @@ function emptyLayer(): Layer {
     vent: new Int8Array(CELLS).fill(-1),
     phase: new Int8Array(CELLS).fill(-1),
     rotor: new Int8Array(CELLS),
+    spring: new Uint8Array(CELLS),
+    paintPad: new Int8Array(CELLS).fill(-1),
+    paintGate: new Int8Array(CELLS).fill(-1),
+    mud: new Uint8Array(CELLS),
     special: new Uint8Array(CELLS)
   };
 }
@@ -84,6 +96,10 @@ function cloneLayer(l: Layer): Layer {
     vent: l.vent.slice(),
     phase: l.phase.slice(),
     rotor: l.rotor.slice(),
+    spring: l.spring.slice(),
+    paintPad: l.paintPad.slice(),
+    paintGate: l.paintGate.slice(),
+    mud: l.mud.slice(),
     special: l.special.slice()
   };
 }
@@ -112,6 +128,10 @@ function spinLayer(l: Layer, hub: number): void {
   moveArr(l.vent, rotateDirVal);
   moveArr(l.phase);
   moveArr(l.rotor);
+  moveArr(l.spring);
+  moveArr(l.paintPad);
+  moveArr(l.paintGate);
+  moveArr(l.mud);
   moveArr(l.special);
 }
 
@@ -139,6 +159,18 @@ export function compileWorld(puzzle: Puzzle): World {
   if (on('VENTILATION')) for (const t of puzzle.vents) base.vent[toIdx(t)] = dirIndex(t.dir);
   if (on('PHASE_LAYERS')) for (const t of puzzle.phaseTiles) base.phase[toIdx(t)] = t.layer;
   if (on('ROTORS')) for (const t of puzzle.rotors) base.rotor[toIdx(t)] = t.rot;
+  if (on('SPRINGS')) for (const t of puzzle.springs ?? []) base.spring[toIdx(t)] = 1;
+  if (on('PAINT')) {
+    for (const t of puzzle.paintPads ?? []) base.paintPad[toIdx(t)] = t.color;
+    for (const t of puzzle.paintGates ?? []) base.paintGate[toIdx(t)] = t.color;
+  }
+  if (on('MUD')) for (const t of puzzle.mud ?? []) base.mud[toIdx(t)] = 1;
+  const keyAt = new Int8Array(CELLS).fill(-1);
+  const lockAt = new Int8Array(CELLS).fill(-1);
+  if (on('KEYS')) {
+    (puzzle.keys ?? []).forEach((t, k) => (keyAt[toIdx(t)] = k));
+    (puzzle.locks ?? []).forEach((t, k) => (lockAt[toIdx(t)] = k));
+  }
 
   // Feature tiles never crumble and are never blighted.
   for (let i = 0; i < CELLS; i++) {
@@ -153,7 +185,13 @@ export function compileWorld(puzzle: Puzzle): World {
       base.oneway[i]! >= 0 ||
       base.vent[i]! >= 0 ||
       base.phase[i]! >= 0 ||
-      base.rotor[i]
+      base.rotor[i] ||
+      base.spring[i] ||
+      base.paintPad[i]! >= 0 ||
+      base.paintGate[i]! >= 0 ||
+      base.mud[i] ||
+      keyAt[i]! >= 0 ||
+      lockAt[i]! >= 0
     ) {
       base.special[i] = 1;
     }
@@ -220,6 +258,8 @@ export function compileWorld(puzzle: Puzzle): World {
     cellPaths,
     cellTiles,
     fragile,
+    keyAt,
+    lockAt,
     portalAt,
     portalPos,
     magnets: on('MAGNETISM') ? puzzle.magnets.map(toIdx) : [],

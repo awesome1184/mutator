@@ -29,7 +29,6 @@ test('submit replays the route and ranks only the first solve', async () => {
   assert.equal(good.ranked, true);
   assert.equal(good.result?.stars, 3);
   assert.equal(good.me?.streak, 1);
-  assert.ok(good.newBadges.includes('spotless'));
   assert.equal(good.day.solvers, 1);
 
   const again = await submit(env, { date, route: puzzle.solution ?? '', rewinds: 3 });

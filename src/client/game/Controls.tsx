@@ -52,6 +52,7 @@ export function Controls({ world, state, previews, canUndo, disabled, onAction, 
         {rot !== 0 && <span className="mod">Rotor: your next move turns {rot > 0 ? 'clockwise' : 'anticlockwise'}</span>}
         {surge && <span className="mod">This move goes 2 tiles</span>}
         {ghost && <span className="mod">This move can pass through a wall</span>}
+        {state.stuck && <span className="mod">Stuck in mud: this move only pulls you free</span>}
       </div>
       <div className="pad-grid">
         {pad('U')}

@@ -117,7 +117,8 @@ export function courierWaypoints(events: StepEvent[]): Waypoint[] {
         out.push({ to: e.to, kind: e.t, jump: (e.t === 'move' && e.kind === 'phase') || manhattan(e.from, e.to) > 2 });
         break;
       case 'portal':
-        out.push({ to: e.to, kind: 'portal', jump: true });
+      case 'spring':
+        out.push({ to: e.to, kind: e.t, jump: true });
         break;
       default:
         break;

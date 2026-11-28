@@ -15,7 +15,7 @@ import { shareText } from '../shared/scoring.ts';
 import { getApi, STANDALONE } from './lib/api.ts';
 import { play, isMuted, setMuted } from './lib/sound.ts';
 import { load, save } from './lib/storage.ts';
-import { Board } from './game/Board.tsx';
+import { Board, PAINT_INK } from './game/Board.tsx';
 import { Wordmark } from './game/Wordmark.tsx';
 import { Controls } from './game/Controls.tsx';
 import { Forecast } from './game/Forecast.tsx';
@@ -66,6 +66,9 @@ function soundFor(events: StepEvent[]): void {
   if (events.some((e) => e.t === 'solved')) return play('win');
   if (events.some((e) => e.t === 'collect')) return play('cell');
   if (events.some((e) => e.t === 'portal')) return play('warp');
+  if (events.some((e) => e.t === 'spring')) return play('spring');
+  if (events.some((e) => e.t === 'unlock' || e.t === 'key')) return play('unlock');
+  if (events.some((e) => e.t === 'mud' || e.t === 'stuck')) return play('squelch');
   if (events.some((e) => e.t === 'doors')) return play('door');
   if (events.some((e) => e.t === 'collapse')) return play('crack');
   if (events.some((e) => e.t === 'conveyor' || e.t === 'vent' || e.t === 'magnet' || e.t === 'repel' || e.t === 'attract')) return play('push');
@@ -135,7 +138,6 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
   const [sheet, setSheet] = useState<SheetId>(initial.result ? 'result' : null);
   const [practice, setPractice] = useState(!!initial.result);
   const [lastResult, setLastResult] = useState<Result | null>(initial.result);
-  const [newBadges, setNewBadges] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [voting, setVoting] = useState(false);
   const [ranks, setRanks] = useState<LeaderboardResponse | null>(null);
@@ -170,7 +172,6 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
         }));
         if (res.puzzle) setPuzzle(res.puzzle);
         setLastResult(res.ranked ? res.result : { ...res.result, moves: route.length, rewinds, clean: rewinds === 0, route });
-        setNewBadges(res.newBadges);
         window.setTimeout(() => setSheet('result'), 650);
       } catch (e) {
         showToast(e instanceof Error ? e.message : 'Could not save your solve.');
@@ -444,6 +445,21 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
             ))}
             {state.got === 3 && <span>exit open</span>}
           </span>
+          {world.has.KEYS && (
+            <span className="st-keys" aria-label={`${state.keys} ${state.keys === 1 ? 'key' : 'keys'} held`}>
+              <svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true">
+                <circle cx="6" cy="7" r="4" fill="none" stroke="currentColor" strokeWidth="2.2" />
+                <path d="M10 7h10M17 7v4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+              {state.keys}
+            </span>
+          )}
+          {world.has.PAINT && (
+            <span className="st-paint">
+              <i style={{ background: state.paint ? PAINT_INK[state.paint - 1] : 'transparent' }} />
+              {state.paint === 1 ? 'green' : state.paint === 2 ? 'violet' : 'no paint'}
+            </span>
+          )}
           {practice && <span className="st-mode">{replaying ? 'par route' : 'practice'}</span>}
           {isPast && !solvedOfficially && <span className="st-mode">from {prettyDate(data.date)}</span>}
           {state.solved && shownResult && (
@@ -458,7 +474,7 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
         <p className={info ? 'info' : 'info idle'} aria-live="polite">
           {info ??
             (!hintSeen && run.route.length === 0
-              ? 'You are the orange blob. Swipe or use the pad to move. Grab both energy cells (the batteries), then reach the EXIT door. Dashed rings show where each move would land you.'
+              ? 'You are the orange ringed dot. Swipe or use the pad to move. Grab both energy cells (the batteries), then reach the EXIT door. Dashed rings show where each move would land you.'
               : 'Tap and hold (or hover) any tile to see what it is.')}
         </p>
 
@@ -508,7 +524,6 @@ function Game({ initial, onOpenDate }: { initial: StateResponse; onOpenDate: (d:
             day={data.day}
             myRank={data.board.mine?.rank ?? null}
             vote={data.vote}
-            newBadges={newBadges}
             nextAt={data.nextAt}
             loggedIn={loggedIn}
             onVote={(m) => void vote(m)}

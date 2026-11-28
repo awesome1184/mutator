@@ -3,7 +3,7 @@
 
 import { load, save } from './storage.ts';
 
-type Cue = 'step' | 'bump' | 'cell' | 'warp' | 'push' | 'fall' | 'door' | 'crack' | 'win' | 'undo';
+type Cue = 'step' | 'bump' | 'cell' | 'warp' | 'push' | 'fall' | 'door' | 'crack' | 'win' | 'undo' | 'spring' | 'unlock' | 'squelch';
 
 let ctx: AudioContext | null = null;
 let muted = load<boolean>('mutator-muted', false);
@@ -74,6 +74,16 @@ export function play(cue: Cue): void {
       break;
     case 'crack':
       blip(220, 0.1, 'sawtooth', 0.025, 90);
+      break;
+    case 'spring':
+      blip(240, 0.14, 'sine', 0.06, 720);
+      break;
+    case 'unlock':
+      blip(520, 0.05, 'square', 0.025, 520);
+      blip(780, 0.08, 'triangle', 0.04, 780, 0.05);
+      break;
+    case 'squelch':
+      blip(120, 0.14, 'sine', 0.06, 70);
       break;
     case 'undo':
       blip(440, 0.05, 'triangle', 0.03, 330);

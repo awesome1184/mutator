@@ -82,6 +82,11 @@ export function initialState(w: World): GameState {
     got: 0,
     cells: w.cellPaths.map((p) => p[0] as number),
     crates: [...w.crateStart],
+    paint: 0,
+    keys: 0,
+    keysTaken: 0,
+    locksOpen: 0,
+    stuck: false,
     decay,
     blight,
     solved: false
@@ -100,6 +105,13 @@ type Ctx = {
   got: number;
   cells: number[];
   crates: number[];
+  paint: number;
+  keys: number;
+  keysTaken: number;
+  locksOpen: number;
+  /** Mud has hold of you: nothing moves you for the rest of this move. */
+  mudLocked: boolean;
+  enteredMud: boolean;
   pendingRot: number;
   decay: Int8Array;
   blight: Uint8Array;
@@ -126,10 +138,14 @@ function nb(w: World, i: number, d: Dir): number {
 }
 
 /** Whether `i` can be entered by `who` travelling in direction `dir`. */
-function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover): boolean {
+function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover, sight = false): boolean {
   if (i < 0) return true;
   const L = ctx.L;
   if (L.wall[i]) return true;
+  const pg = L.paintGate[i] as number;
+  if (pg >= 0 && !(who === 'courier' && ctx.paint === pg + 1)) return true;
+  const lk = ctx.w.lockAt[i] as number;
+  if (lk >= 0 && !(ctx.locksOpen & (1 << lk)) && !(who === 'courier' && !sight && ctx.keys > 0)) return true;
   if (who !== 'drone' && ctx.drone === i) return true;
   if (who !== 'echo' && ctx.echo === i) return true;
   if (who !== 'courier' && ctx.pos === i) return true;
@@ -181,6 +197,29 @@ function courierEnter(ctx: Ctx, to: number, ev: StepEvent): void {
   ctx.pos = to;
   collectAt(ctx, to);
   pressPlate(ctx, to);
+  const w = ctx.w;
+  const key = w.keyAt[to] as number;
+  if (key >= 0 && !(ctx.keysTaken & (1 << key))) {
+    ctx.keysTaken |= 1 << key;
+    ctx.keys += 1;
+    ctx.events.push({ t: 'key', at: to });
+  }
+  const lock = w.lockAt[to] as number;
+  if (lock >= 0 && !(ctx.locksOpen & (1 << lock)) && ctx.keys > 0) {
+    ctx.keys -= 1;
+    ctx.locksOpen |= 1 << lock;
+    ctx.events.push({ t: 'unlock', at: to });
+  }
+  const pad = ctx.L.paintPad[to] as number;
+  if (pad >= 0 && ctx.paint !== pad + 1) {
+    ctx.paint = pad + 1;
+    ctx.events.push({ t: 'paint', color: pad, at: to });
+  }
+  if (ctx.L.mud[to]) {
+    ctx.mudLocked = true;
+    ctx.enteredMud = true;
+    ctx.events.push({ t: 'mud', at: to });
+  }
 }
 
 /** Whether a crate can be moved into `to` (a pit counts: the crate fills it). */
@@ -190,6 +229,7 @@ function crateCanEnter(ctx: Ctx, to: number, d: Dir): boolean {
   if (to < 0 || ctx.crates.includes(to)) return false;
   if (to === w.exit || ctx.cells.includes(to) || to === ctx.pos || to === ctx.echo || to === ctx.drone) return false;
   if ((L.vent[to] as number) >= 0 || L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
+  if (L.spring[to] || (w.keyAt[to] as number) >= 0) return false;
   if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
   if (ctx.decay[to] === 0) return true;
   return !blocked(ctx, to, d, 'echo');
@@ -299,6 +339,7 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
   const L = ctx.L;
   let travel = travelIn;
   for (let iter = 0; iter < 24; iter++) {
+    if (ctx.mudLocked) break;
     let moved = false;
     const here = ctx.pos;
 
@@ -370,6 +411,16 @@ function resolveTileEffects(ctx: Ctx, travelIn: Dir | null): void {
       }
     }
 
+    if (w.has.SPRINGS && !moved && travel && L.spring[ctx.pos] && markUsed(ctx.pos, 16)) {
+      // A spring throws you two tiles onward, over whatever is in between.
+      const p = ctx.pos;
+      const land = nb(w, nb(w, p, travel), travel);
+      if (land >= 0 && !blocked(ctx, land, travel, 'courier')) {
+        courierEnter(ctx, land, { t: 'spring', from: p, to: land });
+        moved = true;
+      }
+    }
+
     if (w.has.CRYO_SLICK && !moved && travel && L.ice[ctx.pos]) {
       const p = ctx.pos;
       const nxt = nb(w, p, travel);
@@ -426,7 +477,7 @@ function magnetDir(ctx: Ctx, p: number, who: Mover): Dir | null {
     if (!d) continue;
     let clear = true;
     for (let t = stepIdx(p, d); t >= 0 && t !== mag; t = stepIdx(t, d)) {
-      if (blocked(ctx, t, d, who)) {
+      if (blocked(ctx, t, d, who, true)) {
         clear = false;
         break;
       }
@@ -475,7 +526,13 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     got: s.got,
     cells: [...s.cells],
     crates: [...s.crates],
-    pendingRot: hold ? s.pendingRot : 0,
+    paint: s.paint,
+    keys: s.keys,
+    keysTaken: s.keysTaken,
+    locksOpen: s.locksOpen,
+    mudLocked: s.stuck,
+    enteredMud: false,
+    pendingRot: hold || s.stuck ? s.pendingRot : 0,
     decay: w.has.DECAY ? s.decay.slice() : s.decay,
     blight: w.has.INFECTION ? s.blight.slice() : s.blight,
     beam: beamLine(w, turn),
@@ -488,7 +545,10 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   };
 
   // 1. Voluntary movement.
-  if (hold || !moveDir) {
+  if (s.stuck) {
+    // Pulling free of mud takes the whole move.
+    ctx.events.push({ t: 'stuck', at: ctx.pos });
+  } else if (hold || !moveDir) {
     ctx.events.push({ t: 'hold', at: ctx.pos });
   } else {
     const overclock = w.has.OVERCLOCK === true && isOverclock(turn);
@@ -517,6 +577,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       courierEnter(ctx, nxt, { t: 'move', from, to: nxt, kind: k === 0 && kind === 'inertia' ? 'walk' : kind });
       if ((L.oneway[nxt] as number) >= 0) ctx.events.push({ t: 'oneway', at: nxt });
       moved = true;
+      if (ctx.mudLocked) break;
     }
     if (!moved) return { ok: false, reason: 'blocked' };
   }
@@ -531,19 +592,20 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       pressPlate(ctx, tgt);
     }
   }
-  if (w.has.MIRROR_DRONE && ctx.drone >= 0 && moveDir) {
-    droneStep(ctx, opposite(moveDir));
+  const moved = s.stuck ? null : moveDir;
+  if (w.has.MIRROR_DRONE && ctx.drone >= 0 && moved) {
+    droneStep(ctx, opposite(moved));
   }
 
   // 3. Tile effects on the tile you walked into.
-  if (moveDir) resolveTileEffects(ctx, moveDir);
+  if (moved) resolveTileEffects(ctx, moved);
 
   // 4. Charged cells, then magnets.
-  if (w.has.MAGNETIC_CELLS) {
+  if (w.has.MAGNETIC_CELLS && !ctx.mudLocked) {
     const d = chargedCells(ctx);
     if (d) resolveTileEffects(ctx, d);
   }
-  if (w.has.MAGNETISM && massTier(w, ctx.got) !== 'heavy') {
+  if (w.has.MAGNETISM && massTier(w, ctx.got) !== 'heavy' && !ctx.mudLocked) {
     const d = magnetPull(ctx);
     if (d) resolveTileEffects(ctx, d);
   }
@@ -557,7 +619,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     const tier = massTier(w, ctx.got);
     const falls = tier === 'light' ? 2 : tier === 'heavy' ? 0 : 1;
     const gd = gravityDir(turn);
-    for (let k = 0; k < falls; k++) {
+    for (let k = 0; k < falls && !ctx.mudLocked; k++) {
       const tgt = nb(w, ctx.pos, gd);
       if (blocked(ctx, tgt, gd, 'courier')) break;
       courierEnter(ctx, tgt, { t: 'gravity', from: ctx.pos, to: tgt });
@@ -567,7 +629,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
   }
 
   // 6. Tether snap-back.
-  if (w.tether >= 0 && chebyshev(ctx.pos, w.tether) > 2) {
+  if (w.tether >= 0 && !ctx.mudLocked && chebyshev(ctx.pos, w.tether) > 2) {
     const dr = rowOf(w.tether) - rowOf(ctx.pos);
     const dc = colOf(w.tether) - colOf(ctx.pos);
     const d: Dir = Math.abs(dr) >= Math.abs(dc) ? (dr > 0 ? 'D' : 'U') : dc > 0 ? 'R' : 'L';
@@ -676,8 +738,8 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       pos,
       drone: ctx.drone,
       echo: ctx.echo,
-      last: hold ? 'W' : moveDir,
-      inertia: w.has.INERTIA && moveDir ? moveDir : null,
+      last: moved ?? 'W',
+      inertia: w.has.INERTIA && moved ? moved : null,
       pendingRot: ctx.pendingRot,
       prevPos: pos,
       after,
@@ -685,6 +747,11 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       got: ctx.got,
       cells: ctx.cells,
       crates: ctx.crates,
+      paint: ctx.paint,
+      keys: ctx.keys,
+      keysTaken: ctx.keysTaken,
+      locksOpen: ctx.locksOpen,
+      stuck: ctx.enteredMud && !s.stuck,
       decay: ctx.decay,
       blight: ctx.blight,
       solved
@@ -808,6 +875,9 @@ export function stateKey(w: World, s: GameState): string {
   if (w.has.AFTERIMAGE) k += ',' + s.prevPos;
   if (w.has.SKITTISH_CELLS) k += ',c' + s.cells.join('.');
   if (w.has.CRATES) k += ',x' + s.crates.join('.');
+  if (w.has.PAINT) k += ',p' + s.paint;
+  if (w.has.KEYS) k += ',k' + s.keys + '.' + s.keysTaken + '.' + s.locksOpen;
+  if (w.has.MUD) k += s.stuck ? ',m' : '';
   if (w.has.DECAY) {
     k += '|';
     const d = s.decay;

@@ -1,5 +1,5 @@
 import { ACTION_ARROW } from './engine/grid.ts';
-import { ALL_MUTATIONS, MUTATIONS } from './engine/mutations.ts';
+import { MUTATIONS } from './engine/mutations.ts';
 import { padNumber } from './engine/date.ts';
 import type { Action, MutationId } from './engine/types.ts';
 
@@ -16,20 +16,6 @@ export function verdict(moves: number, par: number, clean: boolean): string {
   if (over <= 3) return `${over} over par.`;
   return `${over} over par. Tomorrow, maybe.`;
 }
-
-export type Badge = { id: string; title: string; how: string };
-
-export const BADGES: readonly Badge[] = [
-  { id: 'first', title: 'First clear', how: 'Solve any puzzle.' },
-  { id: 'par', title: 'On par', how: 'Match par.' },
-  { id: 'clean', title: 'No rewinds', how: 'Solve without undo or restart.' },
-  { id: 'spotless', title: 'Spotless', how: 'Match par without undo or restart.' },
-  { id: 'week', title: 'Seven straight', how: 'Solve on 7 days in a row.' },
-  { id: 'month', title: 'Thirty straight', how: 'Solve on 30 days in a row.' },
-  { id: 'anomaly', title: 'Sunday shift', how: 'Solve a three-mutation Sunday.' },
-  { id: 'cat10', title: 'Ten on file', how: 'Solve puzzles with 10 different mutations.' },
-  { id: 'cat27', title: 'Full catalogue', how: `Solve puzzles with all ${ALL_MUTATIONS.length} mutations.` }
-];
 
 export function mutationTitle(muts: readonly MutationId[]): string {
   return muts.map((m) => MUTATIONS[m].name).join(' × ');

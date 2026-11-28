@@ -220,3 +220,62 @@ test('a cornered skittish cell can be caught', () => {
   const r = replay(w, ['R', 'R']);
   assert.equal((r.states[2]!.got & 1) !== 0, true);
 });
+
+test('springs throw you two tiles onward, over a wall', () => {
+  const p = makePuzzle({ mutations: ['SPRINGS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], springs: [co(3, 1)], grid: walls([3, 2]) });
+  const w = compileWorld(p);
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.pos, at(3, 3));
+});
+
+test('paint: barriers only let the matching colour through', () => {
+  const p = makePuzzle({
+    mutations: ['PAINT'],
+    start: co(3, 0),
+    cells: [co(0, 0), co(6, 6)],
+    paintGates: [{ r: 3, c: 2, color: 0 }],
+    paintPads: [{ r: 4, c: 1, color: 0 }]
+  });
+  const w = compileWorld(p);
+  const r = replay(w, ['R']);
+  assert.equal(step(w, r.states[1]!, 'R').ok, false);
+  const r2 = replay(w, ['R', 'D', 'U', 'R']);
+  assert.ok(r2.ok);
+  assert.equal(r2.states[4]?.pos, at(3, 2));
+});
+
+test('keys open locks for good, and only with a key in hand', () => {
+  const p = makePuzzle({ mutations: ['KEYS'], start: co(3, 0), cells: [co(0, 0), co(6, 6)], keys: [co(4, 0)], locks: [co(3, 1)] });
+  const w = compileWorld(p);
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+  const r = replay(w, ['D', 'U', 'R', 'L', 'R']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+  assert.equal(r.states[5]?.keys, 0);
+  assert.equal(r.states[5]?.locksOpen, 1);
+});
+
+test('mud stops you and holds you for one move, even against gravity', () => {
+  const p = makePuzzle({ mutations: ['MUD', 'GRAVITY'], start: co(1, 0), cells: [co(0, 6), co(6, 6)], mud: [co(1, 1)] });
+  const w = compileWorld(p);
+  const r = replay(w, ['R', 'R', 'R']);
+  assert.ok(r.ok);
+  assert.equal(r.states[1]?.pos, at(1, 1));
+  assert.equal(r.states[1]?.stuck, true);
+  assert.equal(r.states[2]?.pos, at(1, 1));
+  assert.equal(r.states[3]?.pos, at(2, 2));
+});
+
+test('mutation pools: never two mild mutations, and Mondays are never mild', async () => {
+  const { dayPlan, isMild, mutationsFor } = await import('../src/shared/engine/schedule.ts');
+  let d = '2026-12-01';
+  for (let i = 0; i < 400; i++) {
+    const plan = dayPlan(d);
+    for (const pick of plan.candidates) {
+      const { mutations } = mutationsFor(plan, pick);
+      assert.ok(mutations.filter(isMild).length <= 1, `${d}: ${mutations.join('+')}`);
+      if (plan.tier.slots === 1) assert.ok(!isMild(mutations[0]!), `${d} Monday ${mutations[0]}`);
+    }
+    d = addDays(d, 1);
+  }
+});

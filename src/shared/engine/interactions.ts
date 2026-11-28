@@ -42,7 +42,15 @@ const NOTES: Record<string, string> = {
   'CONVEYOR+MIRROR_DRONE': 'Belts carry the drone.',
   'CRYO_SLICK+MIRROR_DRONE': 'The drone slides on ice too.',
   'FLOOD+INFECTION': 'Blight cannot grow into water.',
-  'CRATES+TURNTABLES': 'A crate on a gear’s ring rides it round.'
+  'CRATES+TURNTABLES': 'A crate on a gear’s ring rides it round.',
+  'GRAVITY+SPRINGS': 'Falling onto a spring counts, so gravity can throw you 2 more tiles down.',
+  'CRYO_SLICK+SPRINGS': 'A slide that reaches a spring is thrown 2 tiles further.',
+  'CONVEYOR+MUD': 'A belt that carries you into mud stops there.',
+  'CRYO_SLICK+MUD': 'Mud stops a slide dead.',
+  'GRAVITY+MUD': 'While you are stuck in mud, gravity can’t pull you.',
+  'CRATES+KEYS': 'A crate can’t go into a lock until you have opened it.',
+  'CRATES+PAINT': 'Crates never pass paint barriers.',
+  'MIRROR_DRONE+PAINT': 'The drone never passes paint barriers, whatever colour you are.'
 };
 
 export function interactionNotes(muts: readonly MutationId[]): { pair: [MutationId, MutationId]; text: string }[] {

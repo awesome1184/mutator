@@ -38,6 +38,13 @@ function features(p: Puzzle): { r: number; c: number; ink: string }[] {
   add(p.rotors, 'ROTORS');
   add(p.blight, 'INFECTION');
   add(p.cracked ?? [], 'DECAY');
+  add(p.crates ?? [], 'CRATES');
+  add(p.springs ?? [], 'SPRINGS');
+  add(p.paintPads ?? [], 'PAINT');
+  add(p.paintGates ?? [], 'PAINT');
+  add(p.keys ?? [], 'KEYS');
+  add(p.locks ?? [], 'KEYS');
+  add(p.mud ?? [], 'MUD');
   if (p.droneStart) add([p.droneStart], 'MIRROR_DRONE');
   if (p.echoStart) add([p.echoStart], 'ECHO');
   return out;
@@ -70,10 +77,9 @@ function MiniPlate({ p }: { p: Puzzle }) {
         return <rect key={k} x={q.x - 2.2} y={q.y - 3} width="4.4" height="6" rx="1" className="mp-cell" />;
       })}
       <g className="mp-me-blob" transform={`translate(${s.x} ${s.y})`}>
-        <circle r="4.4" className="mp-me-halo" />
-        <circle r="3.4" className="mp-me" />
-        <circle cx="-1.2" cy="-0.6" r="0.9" fill="#fff" />
-        <circle cx="1.2" cy="-0.6" r="0.9" fill="#fff" />
+        <circle r="4.3" fill="none" stroke="var(--courier)" strokeWidth="0.9" />
+        <circle r="3.4" className="mp-me-halo" />
+        <circle r="2.5" className="mp-me" />
       </g>
     </svg>
   );

@@ -32,7 +32,11 @@ const SIGNATURE: Partial<Record<MutationId, StepEvent['t'][]>> = {
   ORBITAL_CELLS: ['orbit'],
   SKITTISH_CELLS: ['flee'],
   CRATES: ['crate'],
-  WRAPAROUND: ['wrap']
+  WRAPAROUND: ['wrap'],
+  SPRINGS: ['spring'],
+  PAINT: ['paint'],
+  KEYS: ['unlock'],
+  MUD: ['mud']
 };
 
 type Builder = {
@@ -95,6 +99,12 @@ function blankPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[], pi
     phaseTiles: [],
     rotors: [],
     crates: [],
+    springs: [],
+    paintPads: [],
+    paintGates: [],
+    keys: [],
+    locks: [],
+    mud: [],
     droneStart: null,
     echoStart: null,
     beam: null,
@@ -168,9 +178,11 @@ function buildBoard(
 
   // 3. Layout style. A divider wall with gaps gives gates, doors and
   //    shortcuts something to guard.
-  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS'];
+  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS', 'PAINT', 'KEYS', 'SPRINGS'];
   const wantsDivider = mutations.some((m) => gatewayMuts.includes(m));
-  const style = wantsDivider && rng.next() < 0.7 ? 'divider' : rng.next() < 0.35 ? 'pillars' : 'scatter';
+  // Keys and paint only matter if every way across is guarded, so they nearly always get a divider.
+  const sealable = has('KEYS') || has('PAINT');
+  const style = wantsDivider && rng.next() < (sealable ? 0.92 : 0.7) ? 'divider' : rng.next() < 0.35 ? 'pillars' : 'scatter';
   if (style === 'divider' && tether < 0 && hubs.length === 0) {
     const axis = rng.next() < 0.5 ? 'row' : 'col';
     const line = rng.int(2, 5);
@@ -325,6 +337,42 @@ function buildBoard(
       p.oneWays.push({ ...toCoord(g), dir: rng.pick(dirs) });
     }
   }
+  // Every free gap in the divider gets a barrier or a lock, so the far side
+  // has to be earned. Gaps are shared out when both mutations are active.
+  const freeGaps = b.gaps.filter((g) => !b.occ[g]);
+  const paintGaps = has('PAINT') ? (has('KEYS') ? freeGaps.filter((_, k) => k % 2 === 0) : freeGaps) : [];
+  const lockGaps = has('KEYS') ? (has('PAINT') ? freeGaps.filter((_, k) => k % 2 === 1) : freeGaps) : [];
+  if (has('PAINT')) {
+    const first = rng.int(0, 2) as 0 | 1;
+    const spots = paintGaps.map((g) => ((b.occ[g] = 1), g));
+    const extra = spots.length === 0 ? 2 : rng.int(0, 2);
+    for (let k = 0; k < extra; k++) {
+      const g = claim(b, undefined, true);
+      if (g >= 0) spots.push(g);
+    }
+    spots.forEach((g, k) => (p.paintGates ??= []).push({ ...toCoord(g), color: ((first + k) % 2) as 0 | 1 }));
+    const colors = [...new Set((p.paintGates ?? []).map((g) => g.color))];
+    colors.forEach((color, k) => {
+      const near = k === 0 && startSide !== 0;
+      const pad = claim(b, (i) => manhattan(i, start) >= 2 && (!near || b.sideOf(i) === startSide), true);
+      if (pad >= 0) (p.paintPads ??= []).push({ ...toCoord(pad), color });
+    });
+    if ((p.paintGates ?? []).length === 0 || (p.paintPads ?? []).length === 0) return null;
+  }
+  if (has('KEYS')) {
+    const locks = lockGaps.map((g) => ((b.occ[g] = 1), g));
+    if (locks.length === 0 || rng.next() < 0.4) {
+      const extra = claim(b);
+      if (extra >= 0) locks.push(extra);
+    }
+    const keyCount = rng.int(1, locks.length + 1);
+    for (let k = 0; k < keyCount; k++) {
+      const key = claim(b, (i) => manhattan(i, start) >= 2 && (k > 0 || startSide === 0 || b.sideOf(i) === startSide));
+      if (key >= 0) (p.keys ??= []).push(toCoord(key));
+    }
+    for (const l of locks) (p.locks ??= []).push(toCoord(l));
+    if ((p.locks ?? []).length === 0 || (p.keys ?? []).length === 0) return null;
+  }
   if (has('PHASE_LAYERS')) {
     const n = rng.int(4, 7);
     for (let k = 0; k < n; k++) {
@@ -418,6 +466,20 @@ function buildBoard(
       if (t >= 0) p.rotors.push({ ...toCoord(t), rot: rng.next() < 0.5 ? 1 : -1 });
     }
   }
+  if (has('SPRINGS')) {
+    const n = rng.int(2, 4);
+    for (let k = 0; k < n; k++) {
+      const t = claim(b, undefined, true);
+      if (t >= 0) (p.springs ??= []).push(toCoord(t));
+    }
+  }
+  if (has('MUD')) {
+    const n = rng.int(3, 6);
+    for (let k = 0; k < n; k++) {
+      const t = claim(b, (i) => manhattan(i, start) >= 1, true);
+      if (t >= 0) (p.mud ??= []).push(toCoord(t));
+    }
+  }
   if (has('CRATES')) {
     const n = rng.int(2, 4);
     for (let k = 0; k < n; k++) {
@@ -464,7 +526,7 @@ function buildBoard(
 
   // 10. Extra walls, fewer when the mutations already block a lot.
   const blockers = mutations.filter((m) =>
-    ['CRATES', 'DECAY', 'INFECTION', 'PHASE_GATES', 'BLAST_DOORS', 'TURNTABLES', 'MAGNETISM', 'TETHER_PYLON', 'AFTERIMAGE', 'ECHO', 'ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
+    ['KEYS', 'PAINT', 'MUD', 'CRATES', 'DECAY', 'INFECTION', 'PHASE_GATES', 'BLAST_DOORS', 'TURNTABLES', 'MAGNETISM', 'TETHER_PYLON', 'AFTERIMAGE', 'ECHO', 'ONE_WAY_GATES', 'PULSE_BEAM', 'FLOOD', 'PHASE_LAYERS'].includes(m)
   ).length;
   const [wMin, wMax] = tier.walls;
   const extra = Math.max(0, rng.int(wMin, wMax + 1) - blockers - (style === 'divider' ? 3 : 0));
@@ -699,6 +761,16 @@ function fallbackPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[],
   if (has('PHASE_LAYERS')) p.phaseTiles = [{ r: 3, c: 2, layer: 0 }, { r: 3, c: 4, layer: 1 }];
   if (has('ROTORS')) p.rotors = [{ r: 2, c: 2, rot: 1 }];
   if (has('CRATES')) p.crates = [{ r: 4, c: 3 }];
+  if (has('SPRINGS')) p.springs = [{ r: 4, c: 2 }];
+  if (has('PAINT')) {
+    p.paintPads = [{ r: 2, c: 1, color: 0 }];
+    p.paintGates = [{ r: 3, c: 4, color: 0 }];
+  }
+  if (has('KEYS')) {
+    p.keys = [{ r: 4, c: 1 }];
+    p.locks = [{ r: 2, c: 5 }];
+  }
+  if (has('MUD')) p.mud = [{ r: 4, c: 4 }];
   if (has('MIRROR_DRONE')) p.droneStart = { r: 0, c: 6 };
   if (has('ECHO')) p.echoStart = { r: 6, c: 0 };
   if (has('PULSE_BEAM')) p.beam = { axis: 'col', start: 0, step: 1 };

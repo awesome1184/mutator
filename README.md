@@ -3,10 +3,11 @@
 A daily puzzle for Reddit. Each day you get a 7×7 well plate and the same goal:
 pick up both cells, then reach the exit. What changes is the rules. Every day
 splices two mutations into the physics (Sunday gets three), drawn from a roster
-of 30: gravity that swings around the clock, portals that re-pair every three
+of 34: gravity that swings around the clock, portals that re-pair every three
 moves, floor that cracks behind you, a drone that mirrors you, blight that
 creeps one tile every other move, cells that run away from you, crates to
-push, edges that wrap around, and more.
+push, edges that wrap around, springs, keys and locks, paint barriers, mud,
+and more.
 
 There's no luck involved. The only randomness is in building the day's board.
 After that, the same moves always produce the same result, and everything the
@@ -24,7 +25,7 @@ Built with Devvit Web for Reddit's Game of the Day hackathon.
 - Hold skips your move, but the world still takes its turn.
 - Moves that would go nowhere are refused and cost nothing.
 - Your first solve of the day is the one that counts. Undo and restart are
-  free, but the board records how many you used, and "no rewinds" is a badge.
+  free, but the board records how many you used and uses them to break ties.
 - After solving you can vote on which mutation gets spliced into tomorrow's
   puzzle, post your result (with your route behind a spoiler) as a comment,
   watch a par route, or keep playing for practice.
@@ -44,6 +45,14 @@ Built with Devvit Web for Reddit's Game of the Day hackathon.
 One slot each day is chosen by the community the day before. The fixed slots
 cycle through the whole roster, so every mutation comes round regularly.
 
+Mutations are split into two pools that players never see. The core pool
+changes how you move (gravity, ice, belts, portals, springs, paint and so on).
+The mild pool adds an obstacle or a timer to an otherwise normal board (gates,
+doors, flood, keys, mud and so on). A day never gets two mild mutations, and
+Monday's single mutation is always from the core pool, so no day is just two
+small tweaks on a plain board. The pools are defined by the `pool` field in
+`src/shared/engine/mutations.ts` and enforced in `schedule.ts`.
+
 ## What's on Reddit
 
 - **A daily post.** A scheduled job creates the day's post at 00:01 UTC, pins
@@ -53,7 +62,7 @@ cycle through the whole roster, so every mutation comes round regularly.
   how many people have solved it. The game opens in expanded view.
 - **A board per puzzle.** Ranked by moves, then fewest undos and restarts, then
   who finished first. It shows snoovatars, and there's a separate streak board.
-- **Streaks, badges and a catalogue** of the mutations you've beaten.
+- **Streaks and a catalogue** of the mutations you've beaten.
 - **Optional streak flair.** A player can opt in to showing their streak as
   user flair in the community.
 - **Comment sharing.** "Post my result as a comment" writes your score as you,
@@ -75,7 +84,8 @@ secret, and the UI didn't fit on a phone. This rebuild:
 - adds forecasts, landing previews and connector lines (portal pairs, plates
   to doors, magnet and cell pulls acting on you, the gravity direction), so
   nothing the world does is hidden;
-- adds three new mutations: Wraparound, Skittish Cells and Crates;
+- adds seven new mutations: Wraparound, Skittish Cells, Crates, Springs,
+  Paint, Keys & Locks and Mud;
 - adds a generator that targets a par range per weekday and rejects boards
   where any active mutation doesn't change the best route (checked by removing
   each mutation and re-solving);

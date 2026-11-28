@@ -37,13 +37,18 @@ export type MutationId =
   | 'ROTORS'
   | 'WRAPAROUND'
   | 'SKITTISH_CELLS'
-  | 'CRATES';
+  | 'CRATES'
+  | 'SPRINGS'
+  | 'PAINT'
+  | 'KEYS'
+  | 'MUD';
 
 export type DirTile = Coord & { dir: Dir };
 export type RotTile = Coord & { rot: 1 | -1 };
 export type PortalTile = Coord & { label: 0 | 1 | 2 | 3 };
 export type GateTile = Coord & { polarity: 0 | 1 };
 export type LayerTile = Coord & { layer: 0 | 1 };
+export type ColorTile = Coord & { color: 0 | 1 };
 
 export type PulseBeam = { axis: 'row' | 'col'; start: number; step: 1 | -1 };
 export type Flood = { edge: Dir };
@@ -86,6 +91,12 @@ export type Puzzle = {
   rotors: RotTile[];
   /** Pushable crates (Crates). Optional for puzzles stored before crates existed. */
   crates?: Coord[];
+  springs?: Coord[];
+  paintPads?: ColorTile[];
+  paintGates?: ColorTile[];
+  keys?: Coord[];
+  locks?: Coord[];
+  mud?: Coord[];
   droneStart: Coord | null;
   echoStart: Coord | null;
   beam: PulseBeam | null;
@@ -121,6 +132,14 @@ export type GameState = {
   cells: number[];
   /** Crate positions, sorted (Crates). */
   crates: number[];
+  /** Paint colour carried: 0 none, 1 or 2 (Paint). */
+  paint: number;
+  /** Keys in hand, keys picked up (bitmask) and locks opened (bitmask). */
+  keys: number;
+  keysTaken: number;
+  locksOpen: number;
+  /** Stuck in mud: the next action only frees you. */
+  stuck: boolean;
   /** -1 untouched, -2 pit filled by a crate, 0 collapsed pit, >0 turns until collapse. */
   decay: Int8Array;
   /** 1 = infected by blight. */
@@ -152,6 +171,12 @@ export type StepEvent =
   | { t: 'flee'; index: number; from: number; to: number }
   | { t: 'crate'; from: number; to: number }
   | { t: 'fill'; at: number }
+  | { t: 'spring'; from: number; to: number }
+  | { t: 'paint'; color: number; at: number }
+  | { t: 'key'; at: number }
+  | { t: 'unlock'; at: number }
+  | { t: 'mud'; at: number }
+  | { t: 'stuck'; at: number }
   | { t: 'wrap'; from: number; to: number }
   | { t: 'after'; at: number }
   | { t: 'collapse'; at: number }
