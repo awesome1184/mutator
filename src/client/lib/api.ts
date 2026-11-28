@@ -59,28 +59,54 @@ const remote: Api = {
 
 let localApi: Promise<Api> | null = null;
 
-// Testing aid for the standalone build: pretend it is some days later.
+// Testing aid for the standalone build: pretend it is some days later. Kept
+// in memory (and in localStorage when the page is allowed to use it), and
+// applied without reloading, because sandboxed file previews block both
+// storage and navigation.
 const OFFSET_KEY = 'mutator-day-offset';
+let offset: number | null = null;
+let benchOff = false;
 
 export function dayOffset(): number {
   if (!STANDALONE) return 0;
-  try {
-    return Math.max(0, Number(localStorage.getItem(OFFSET_KEY) ?? 0) || 0);
-  } catch {
-    return 0;
+  if (offset === null) {
+    try {
+      offset = Math.max(0, Number(localStorage.getItem(OFFSET_KEY) ?? 0) || 0);
+    } catch {
+      offset = 0;
+    }
   }
+  return offset;
 }
 
-/** Jump the standalone build's clock to `days` after the real date (0 = back to real time) and reload. */
+/**
+ * Move the standalone build's clock to `days` after the real date (0 = back
+ * to real time). The app listens for the 'mutator-day' event and reloads the
+ * puzzle in place.
+ */
 export function jumpToDay(days: number): void {
+  offset = Math.max(0, days);
   try {
-    if (days > 0) localStorage.setItem(OFFSET_KEY, String(days));
+    if (offset > 0) localStorage.setItem(OFFSET_KEY, String(offset));
     else localStorage.removeItem(OFFSET_KEY);
   } catch {
-    // storage blocked: nothing to remember
+    // storage blocked: the offset lasts until the page is closed
   }
-  window.location.replace(window.location.pathname);
+  if (benchActive) {
+    // Leave the scratch board for the real day.
+    benchOff = true;
+    benchActive = false;
+    localApi = null;
+    try {
+      window.history.replaceState(null, '', window.location.pathname);
+    } catch {
+      // some previews refuse URL changes; the flag above is enough
+    }
+  }
+  window.dispatchEvent(new CustomEvent('mutator-day'));
 }
+
+let benchActive = false;
 
 /** The clock the game runs on: real time, plus any test offset. */
 export function clientNow(): number {
@@ -116,8 +142,9 @@ async function makeLocal(): Promise<Api> {
   const env = { kv, now: clientNow, user: { name: 'you', avatar: null } };
 
   // Test bench: ?muts=GRAVITY,DECAY loads a scratch puzzle with those mutations.
-  const benchMuts = new URLSearchParams(window.location.search).get('muts');
+  const benchMuts = benchOff ? null : new URLSearchParams(window.location.search).get('muts');
   if (benchMuts) {
+    benchActive = true;
     const { generatePuzzle } = await import('../../shared/engine/generator.ts');
     const { todayKey } = await import('../../shared/engine/date.ts');
     const muts = benchMuts.split(',') as Puzzle['mutations'];

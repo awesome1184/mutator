@@ -85,6 +85,8 @@ function App() {
     setError(null);
     try {
       const api = await getApi();
+      // Let the loading screen paint before a puzzle is generated in the page.
+      if (STANDALONE) await new Promise((r) => window.setTimeout(r, 40));
       const s = await api.state(d);
       setData(s);
     } catch (e) {
@@ -92,9 +94,21 @@ function App() {
     }
   }, []);
 
+  // Bumped by the standalone Next day button.
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const on = (): void => {
+      setData(null);
+      setDate(undefined);
+      setClock((n) => n + 1);
+    };
+    window.addEventListener('mutator-day', on);
+    return () => window.removeEventListener('mutator-day', on);
+  }, []);
+
   useEffect(() => {
     void loadState(date);
-  }, [date, loadState]);
+  }, [date, clock, loadState]);
 
   if (error) {
     return (
@@ -113,7 +127,7 @@ function App() {
       <main className="app center">
         <div className="loading" aria-live="polite">
           <PlateMark />
-          <p>Preparing today’s plate…</p>
+          <p>{dayOffset() > 0 ? 'Preparing the next plate…' : 'Preparing today’s plate…'}</p>
         </div>
       </main>
     );
