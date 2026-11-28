@@ -3,6 +3,7 @@ import type { TaskResponse } from '@devvit/web/server';
 import type { TriggerResponse, UiResponse } from '@devvit/web/shared';
 import { systemEnv } from '../env.ts';
 import { ensureDailyPost } from '../posts.ts';
+import { prepareTomorrow } from '../../shared/service.ts';
 
 export const internal = new Hono();
 
@@ -37,6 +38,16 @@ internal.post('/triggers/on-app-upgrade', async (c) => {
     console.log(`MUTATOR: upgrade post failed: ${String(err)}`);
   }
   return c.json<TriggerResponse>({}, 200);
+});
+
+internal.post('/scheduler/prepare-tomorrow', async (c) => {
+  try {
+    const left = await prepareTomorrow(systemEnv());
+    console.log(`MUTATOR: prepared a puzzle for tomorrow, ${left} to go`);
+  } catch (err) {
+    console.log(`MUTATOR: preparing tomorrow failed: ${String(err)}`);
+  }
+  return c.json<TaskResponse>({}, 200);
 });
 
 internal.post('/scheduler/daily-post', async (c) => {

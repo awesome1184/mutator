@@ -44,6 +44,10 @@
       "daily-post": {
         "endpoint": "/internal/scheduler/daily-post",
         "cron": "1 0 * * *"
+      },
+      "prepare-tomorrow": {
+        "endpoint": "/internal/scheduler/prepare-tomorrow",
+        "cron": "17 * * * *"
       }
     }
   },

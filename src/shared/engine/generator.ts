@@ -5,11 +5,12 @@
 // a board is only accepted when its par sits in the day's range and every
 // active mutation changes the best route.
 
-import { CELLS, DIRS, N, chebyshev, colOf, idx, manhattan, parseActions, ringOf, rowOf, stepIdx, toCoord } from './grid.ts';
+import { CELLS, DIRS, N, chebyshev, colOf, idx, manhattan, parseActions, ringOf, rowOf, stepIdx, toCoord, toIdx } from './grid.ts';
 import { ALL_MUTATIONS, MUTATIONS } from './mutations.ts';
 import { SeededRng } from './rng.ts';
 import { dayPlan, mutationsFor, type DayPlan, type Tier } from './schedule.ts';
-import { replay } from './sim.ts';
+import { initialState, replay } from './sim.ts';
+import { naiveBest, naivePath, STUCK_GAP } from './difficulty.ts';
 import { solve } from './solver.ts';
 import { RULES_VERSION } from './grid.ts';
 import type { Coord, Dir, MutationId, Puzzle, StepEvent } from './types.ts';
@@ -113,7 +114,7 @@ function blankPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[], pi
   };
 }
 
-function buildBoard(
+export function buildBoard(
   dateKey: string,
   plan: DayPlan,
   mutations: MutationId[],
@@ -178,7 +179,7 @@ function buildBoard(
 
   // 3. Layout style. A divider wall with gaps gives gates, doors and
   //    shortcuts something to guard.
-  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS', 'PAINT', 'KEYS', 'SPRINGS'];
+  const gatewayMuts: MutationId[] = ['PHASE_GATES', 'BLAST_DOORS', 'ONE_WAY_GATES', 'PHASE_LAYERS', 'PHASE_SHIFT', 'PORTALS', 'PAINT', 'KEYS', 'SPRINGS', 'VENTILATION'];
   const wantsDivider = mutations.some((m) => gatewayMuts.includes(m));
   // Keys and paint only matter if every way across is guarded, so they nearly always get a divider.
   const sealable = has('KEYS') || has('PAINT');
@@ -337,6 +338,35 @@ function buildBoard(
       p.oneWays.push({ ...toCoord(g), dir: rng.pick(dirs) });
     }
   }
+  // Wall in a target (the exit or a cell) except for one entrance, and return
+  // the entrance, or -1 if the target's surroundings are already in use.
+  const pocket = (target: number): number => {
+    if (has('WRAPAROUND') || target < 0) return -1;
+    const open = DIR_LIST.map((d) => stepIdx(target, d)).filter((j) => j >= 0 && !b.wall[j]);
+    if (open.length < 2 || open.some((j) => b.occ[j] || b.ring[j] || b.gaps.includes(j))) return -1;
+    const entrance = rng.pick(open);
+    for (const j of open) if (j !== entrance) setWall(j);
+    b.occ[entrance] = 1;
+    return entrance;
+  };
+  // Claim a tile far from the given ones (picked at random among the farthest few).
+  const claimFar = (pred: (i: number) => boolean, from: number[]): number => {
+    const options = b.order.filter((i) => !b.occ[i] && !b.wall[i] && !b.ring[i] && pred(i));
+    if (options.length === 0) return -1;
+    const far = (i: number): number => Math.min(...from.map((f) => manhattan(f, i)));
+    const top = Math.max(...options.map(far));
+    const pickFrom = options.filter((i) => far(i) >= top - 1);
+    const i = rng.pick(pickFrom);
+    b.occ[i] = 1;
+    return i;
+  };
+  const farSide = (i: number): boolean => startSide === 0 || b.sideOf(i) === -startSide;
+  const nearSide = (i: number): boolean => startSide === 0 || b.sideOf(i) === startSide;
+  // Pockets add a second errand, which is too long for a warm-up.
+  const pocketOdds = tier.id === 'warmup' ? 0 : tier.id === 'standard' ? 0.35 : 0.65;
+  // The pocket goes round the exit, or round a cell on the far side.
+  const pocketTarget = (): number => (rng.next() < 0.5 ? exit : [cellA, cellB].find((c) => farSide(c)) ?? exit);
+
   // Every free gap in the divider gets a barrier or a lock, so the far side
   // has to be earned. Gaps are shared out when both mutations are active.
   const freeGaps = b.gaps.filter((g) => !b.occ[g]);
@@ -344,30 +374,47 @@ function buildBoard(
   const lockGaps = has('KEYS') ? (has('PAINT') ? freeGaps.filter((_, k) => k % 2 === 1) : freeGaps) : [];
   if (has('PAINT')) {
     const first = rng.int(0, 2) as 0 | 1;
-    const spots = paintGaps.map((g) => ((b.occ[g] = 1), g));
-    const extra = spots.length === 0 ? 2 : rng.int(0, 2);
-    for (let k = 0; k < extra; k++) {
-      const g = claim(b, undefined, true);
-      if (g >= 0) spots.push(g);
-    }
-    spots.forEach((g, k) => (p.paintGates ??= []).push({ ...toCoord(g), color: ((first + k) % 2) as 0 | 1 }));
-    const colors = [...new Set((p.paintGates ?? []).map((g) => g.color))];
-    colors.forEach((color, k) => {
-      const near = k === 0 && startSide !== 0;
-      const pad = claim(b, (i) => manhattan(i, start) >= 2 && (!near || b.sideOf(i) === startSide), true);
-      if (pad >= 0) (p.paintPads ??= []).push({ ...toCoord(pad), color });
+    const gates: { at: number; color: 0 | 1 }[] = paintGaps.map((g, k) => {
+      b.occ[g] = 1;
+      return { at: g, color: ((first + k) % 2) as 0 | 1 };
     });
+    // A pocket in the other colour makes you repaint on the far side.
+    const entrance = rng.next() < pocketOdds || gates.length === 0 ? pocket(pocketTarget()) : -1;
+    if (entrance >= 0) gates.push({ at: entrance, color: (1 - first) as 0 | 1 });
+    if (gates.length === 0) {
+      const g = claim(b, undefined, true);
+      if (g >= 0) gates.push({ at: g, color: first });
+    }
+    for (const g of gates) (p.paintGates ??= []).push({ ...toCoord(g.at), color: g.color });
+    // The divider's colour is fetched on your own side, the pocket's colour on
+    // the far side, each away from the barrier it opens.
+    const dividerColors = new Set(gates.filter((g) => g.at !== entrance).map((g) => g.color));
+    for (const color of [0, 1] as const) {
+      const opens = gates.filter((g) => g.color === color).map((g) => g.at);
+      if (opens.length === 0) continue;
+      const side = dividerColors.has(color) ? nearSide : farSide;
+      let pad = claimFar((i) => side(i) && manhattan(i, start) >= 2, [...opens, start]);
+      if (pad < 0) pad = claim(b, (i) => manhattan(i, start) >= 2, true);
+      if (pad >= 0) (p.paintPads ??= []).push({ ...toCoord(pad), color });
+    }
     if ((p.paintGates ?? []).length === 0 || (p.paintPads ?? []).length === 0) return null;
   }
   if (has('KEYS')) {
     const locks = lockGaps.map((g) => ((b.occ[g] = 1), g));
-    if (locks.length === 0 || rng.next() < 0.4) {
+    const entrance = rng.next() < pocketOdds || locks.length === 0 ? pocket(pocketTarget()) : -1;
+    if (entrance >= 0) locks.push(entrance);
+    if (locks.length === 0) {
       const extra = claim(b);
       if (extra >= 0) locks.push(extra);
     }
-    const keyCount = rng.int(1, locks.length + 1);
+    // One key for each lock you must get through: one on your side for the
+    // divider, one anywhere for the pocket. Spares make it a choice.
+    const needed = (lockGaps.length > 0 ? 1 : 0) + (entrance >= 0 ? 1 : 0) || 1;
+    const keyCount = Math.min(locks.length, needed + (rng.next() < 0.3 ? 1 : 0));
     for (let k = 0; k < keyCount; k++) {
-      const key = claim(b, (i) => manhattan(i, start) >= 2 && (k > 0 || startSide === 0 || b.sideOf(i) === startSide));
+      const side = k === 0 ? nearSide : (): boolean => true;
+      let key = claimFar((i) => side(i) && manhattan(i, start) >= 2, [...locks, start]);
+      if (key < 0) key = claim(b, (i) => manhattan(i, start) >= 2);
       if (key >= 0) (p.keys ??= []).push(toCoord(key));
     }
     for (const l of locks) (p.locks ??= []).push(toCoord(l));
@@ -451,8 +498,33 @@ function buildBoard(
     }
   }
   if (has('VENTILATION')) {
-    const n = rng.int(2, 4);
-    for (let k = 0; k < n; k++) {
+    // A vent in a doorway blowing back toward your side, so you have to cross on an even move.
+    const door = b.gaps.find((g) => !b.occ[g]);
+    if (door !== undefined && startSide !== 0) {
+      const back = DIR_LIST.find((d) => {
+        const j = stepIdx(door, d);
+        return j >= 0 && b.sideOf(j) === startSide;
+      });
+      if (back) {
+        b.occ[door] = 1;
+        p.vents.push({ ...toCoord(door), dir: back });
+      }
+    }
+    // A short wind tunnel: two or three vents in a row, all blowing the same way.
+    const head = claim(b, undefined, true);
+    if (head >= 0) {
+      const dir = rng.pick(DIR_LIST.filter((d) => stepIdx(head, d) >= 0));
+      p.vents.push({ ...toCoord(head), dir });
+      let cur = head;
+      for (let k = rng.int(1, 3); k > 0; k--) {
+        const nx = stepIdx(cur, dir);
+        if (nx < 0 || b.occ[nx] || b.wall[nx] || b.ring[nx] || stepIdx(nx, dir) < 0) break;
+        b.occ[nx] = 1;
+        p.vents.push({ ...toCoord(nx), dir });
+        cur = nx;
+      }
+    }
+    for (let k = rng.int(1, 3); k > 0; k--) {
       const t = claim(b, undefined, true);
       if (t < 0) continue;
       const dirs = DIR_LIST.filter((d) => stepIdx(t, d) >= 0);
@@ -565,7 +637,18 @@ export function ablate(p: Puzzle, m: MutationId): Puzzle {
   return q;
 }
 
-type Scored = { puzzle: Puzzle; score: number; relevant: boolean; decayFlat: boolean };
+type Scored = {
+  puzzle: Puzzle;
+  score: number;
+  inRange: boolean;
+  relevant: boolean;
+  hard: boolean;
+  /** How far over par the best naive player ends up. */
+  gap: number;
+  /** The same for all three naive players added up: a finer signal for climbing. */
+  slack: number;
+  decayFlat: boolean;
+};
 
 type Budget = { left: number };
 
@@ -656,15 +739,37 @@ export function parRange(tier: Tier, mutations: readonly MutationId[]): [number,
   return heavy ? [Math.min(lo, 12), Math.min(hi, 18)] : [lo, hi];
 }
 
-function evaluate(p: Puzzle, tier: Tier, budget: Budget): Scored | null {
+/**
+ * Solve and score a board. While searching, easy boards are dropped once there
+ * is a relevant board to fall back on. While climbing (`climb`), every board
+ * is solved, but relevance is only checked once a board is hard enough.
+ */
+function evaluate(p: Puzzle, tier: Tier, budget: Budget, best: Scored | null, climb = false): Scored | null {
   const w = compileWorld(p);
   const [lo, hi] = parRange(tier, p.mutations);
-  const res = solve(w, { maxDepth: hi + 2, maxStates: Math.min(45000, budget.left) });
-  budget.left -= res.explored;
+  // The naive player first: it needs no par and costs little. A board is hard
+  // when par sits at least tier.gap moves below their score, so the solver
+  // only has to look that deep to find out.
+  const naive = naiveBest(w, initialState(w), hi + 14);
+  budget.left -= naive.work;
+  const hardDepth = Math.min(hi, naive.moves === null ? hi : naive.moves - tier.gap);
+  let res = hardDepth >= lo ? solve(w, { maxDepth: hardDepth, maxStates: Math.min(45000, budget.left) }) : null;
+  if (res) budget.left -= res.explored;
+  if (!res || !res.solvable) {
+    // Too easy, or too big to search. Only worth pinning down if we have
+    // nothing relevant to fall back on.
+    if (best?.relevant && !climb) return null;
+    res = solve(w, { maxDepth: hi + 2, maxStates: Math.min(45000, budget.left) });
+    budget.left -= res.explored;
+  }
   if (!res.solvable) return null;
   p.par = res.par;
   p.solution = res.path.join('');
   const inRange = res.par >= lo && res.par <= hi;
+  const gap = naive.moves === null ? STUCK_GAP : Math.max(0, naive.moves - res.par);
+  const hard = gap >= tier.gap;
+  const par = res.par;
+  const slack = naive.each.reduce<number>((sum, n) => sum + (n === null ? 15 : Math.min(15, n - par)), 0);
 
   const trace = replay(w, res.path);
   const seen = new Set<StepEvent['t']>();
@@ -676,7 +781,7 @@ function evaluate(p: Puzzle, tier: Tier, budget: Budget): Scored | null {
     }
   }
 
-  let relevant = inRange;
+  let relevant = inRange && (hard || !climb);
   let decayFlat = false;
   // Cheap checks first: removing history-heavy mutations shrinks the search.
   const order = [...p.mutations].sort((a, b) => Number(b === 'DECAY' || b === 'INFECTION') - Number(a === 'DECAY' || a === 'INFECTION'));
@@ -703,8 +808,175 @@ function evaluate(p: Puzzle, tier: Tier, budget: Budget): Scored | null {
   }
 
   const target = (lo + hi) / 2;
-  const score = (relevant ? 100 : 0) + (inRange ? 40 : 0) - Math.abs(res.par - target) * 2 + kinds.size;
-  return { puzzle: p, score, relevant, decayFlat };
+  // In order: par in range, every mutation matters, hard enough, then a
+  // bigger gap (up to a point) and a par near the middle of the range.
+  const tooHard = tier.maxGap !== undefined && gap > tier.maxGap;
+  const score =
+    (inRange ? 400 : 0) +
+    (relevant ? 200 : 0) +
+    (hard ? 100 : 0) -
+    (tooHard ? 60 : 0) +
+    Math.min(gap, tier.gap + 2) * 12 -
+    Math.abs(res.par - target) * 2 +
+    kinds.size;
+  return { puzzle: p, score, inRange, relevant, hard, gap, slack, decayFlat };
+}
+
+// ------------------------------------------------------------------ climbing
+//
+// When no board from the search is hard enough, the best one is nudged a tile
+// at a time (a wall added or removed, a feature moved or turned, a cell or the
+// exit moved) and a nudge is kept if it brings the board closer.
+
+const MOVABLE = [
+  'cracked',
+  'conveyors',
+  'portals',
+  'gates',
+  'doors',
+  'plates',
+  'ice',
+  'blight',
+  'reflectors',
+  'oneWays',
+  'vents',
+  'phaseTiles',
+  'rotors',
+  'crates',
+  'springs',
+  'paintPads',
+  'paintGates',
+  'keys',
+  'locks',
+  'mud'
+] as const;
+
+function perturb(src: Puzzle, rng: SeededRng, path: readonly number[]): Puzzle | null {
+  const p = JSON.parse(JSON.stringify(src)) as Puzzle;
+  delete p.solution;
+  const grid = p.grid.map((row) => row.split(''));
+  const wallAt = (i: number): boolean => grid[rowOf(i)]?.[colOf(i)] === '#';
+  const setGrid = (i: number, ch: string): void => {
+    (grid[rowOf(i)] as string[])[colOf(i)] = ch;
+  };
+  const occ = new Uint8Array(CELLS);
+  const fixed = new Uint8Array(CELLS);
+  const mark = (c: Coord | null | undefined): void => {
+    if (c) occ[toIdx(c)] = 1;
+  };
+  mark(p.start);
+  mark(p.exit);
+  p.cells.forEach(mark);
+  mark(p.droneStart);
+  mark(p.echoStart);
+  for (const k of MOVABLE) for (const t of p[k] ?? []) mark(t);
+  for (const m of p.magnets) fixed[toIdx(m)] = 1;
+  for (const h of p.turntables) {
+    fixed[toIdx(h)] = 1;
+    for (const d of DIRS) {
+      const j = stepIdx(toIdx(h), d);
+      if (j >= 0) fixed[j] = 1;
+    }
+  }
+  if (p.tether) fixed[toIdx(p.tether)] = 1;
+  for (const o of p.orbits) for (const c of o) fixed[toIdx(c)] = 1;
+  const free: number[] = [];
+  for (let i = 0; i < CELLS; i++) if (!occ[i] && !fixed[i] && !wallAt(i)) free.push(i);
+  if (free.length === 0) return null;
+  // Most nudges land on the naive player's route: that is where a change
+  // can turn the obvious way into a wrong one.
+  const onPath = free.filter((i) => path.includes(i));
+  const spot = (): number => (onPath.length > 0 && rng.next() < 0.7 ? rng.pick(onPath) : rng.pick(free));
+  const to = (): Coord => toCoord(spot());
+
+  const lists = MOVABLE.filter((k) => (p[k] ?? []).length > 0);
+  const aimed = (['conveyors', 'oneWays', 'vents', 'reflectors', 'rotors'] as const).filter((k) => p[k].length > 0);
+  const op = rng.int(0, 5);
+  if (op === 0) {
+    setGrid(spot(), '#');
+  } else if (op === 1) {
+    const walls: number[] = [];
+    for (let i = 0; i < CELLS; i++) if (wallAt(i) && !fixed[i]) walls.push(i);
+    if (walls.length === 0) return null;
+    setGrid(rng.pick(walls), '.');
+  } else if (op === 2 && lists.length > 0) {
+    const list = p[rng.pick(lists)] as Coord[];
+    const k = rng.int(0, list.length);
+    list[k] = { ...(list[k] as Coord), ...to() };
+  } else if (op === 3 && aimed.length > 0) {
+    const key = rng.pick(aimed);
+    if (key === 'reflectors' || key === 'rotors') {
+      const t = rng.pick(p[key]);
+      t.rot = t.rot === 1 ? -1 : 1;
+    } else {
+      rng.pick(p[key]).dir = rng.pick(DIRS);
+    }
+  } else if (op === 4 && !p.mutations.includes('ORBITAL_CELLS')) {
+    const which = rng.int(0, 3);
+    const c = toCoord(rng.pick(free));
+    if (which === 2) p.exit = c;
+    else p.cells[which] = c;
+  } else {
+    setGrid(spot(), '#');
+  }
+  p.grid = grid.map((row) => row.join(''));
+  return p;
+}
+
+/** Lexicographic progress while climbing: in range, hard and relevant, gap, par near the middle. */
+function climbKey(s: Scored, tier: Tier, target: number): number[] {
+  const over = tier.maxGap !== undefined && s.gap > tier.maxGap ? 1 : 0;
+  return [s.inRange ? 1 : 0, s.hard && s.relevant ? 1 : 0, -over, Math.min(s.gap, tier.gap + 2), s.slack, -Math.abs(s.puzzle.par - target)];
+}
+
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] as number) !== (b[i] as number)) return (a[i] as number) > (b[i] as number) ? 1 : -1;
+  }
+  return 0;
+}
+
+function atLeast(a: number[], b: number[]): boolean {
+  return compareKeys(a, b) >= 0;
+}
+
+export const climbStats = { steps: 0, accepted: 0, budgetAtStart: 0, startSlack: 0, endSlack: 0, maxSlackSeen: 0 };
+
+function climb(start: Scored, tier: Tier, mutations: readonly MutationId[], budget: Budget, rng: SeededRng, steps: number): Scored {
+  climbStats.steps = 0;
+  climbStats.accepted = 0;
+  climbStats.budgetAtStart = budget.left;
+  climbStats.startSlack = start.slack;
+  climbStats.maxSlackSeen = start.slack;
+  const [lo, hi] = parRange(tier, mutations);
+  const target = (lo + hi) / 2;
+  let cur = start;
+  let best = start;
+  let path: number[] = [];
+  let pathOf: Puzzle | null = null;
+  for (let k = 0; k < steps && budget.left > 0; k++) {
+    if (pathOf !== cur.puzzle) {
+      const w = compileWorld(cur.puzzle);
+      path = naivePath(w, initialState(w), cur.puzzle.par + 14);
+      budget.left -= path.length * 40;
+      pathOf = cur.puzzle;
+    }
+    const q = perturb(cur.puzzle, rng, path);
+    if (!q) continue;
+    climbStats.steps++;
+    const sc = evaluate(q, tier, budget, null, true);
+    if (!sc) continue;
+    climbStats.maxSlackSeen = Math.max(climbStats.maxSlackSeen, sc.slack);
+    // Ties are accepted so the search can cross flat ground.
+    if (atLeast(climbKey(sc, tier, target), climbKey(cur, tier, target))) {
+      cur = sc;
+      climbStats.accepted++;
+    }
+    if (cur.score > best.score) best = cur;
+    if (cur.hard && cur.relevant && cur.inRange) break;
+  }
+  climbStats.endSlack = cur.slack;
+  return best;
 }
 
 function fallbackPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[], pick: MutationId | null, seed: string): Puzzle {
@@ -787,7 +1059,7 @@ export type GenerateOptions = {
   stateBudget?: number;
 };
 
-export type GenerateReport = { puzzle: Puzzle; relevant: boolean; fallback: boolean; attempts: number; statesUsed: number };
+export type GenerateReport = { puzzle: Puzzle; relevant: boolean; hard: boolean; gap: number; fallback: boolean; attempts: number; statesUsed: number };
 
 export function generatePuzzle(dateKey: string, opts: GenerateOptions = {}): Puzzle {
   return generateWithReport(dateKey, opts).puzzle;
@@ -819,39 +1091,62 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
   const seed = `${dateKey}:v${RULES_VERSION}:${mutations.join('+')}`;
   const maxAttempts = opts.maxAttempts ?? 120;
   // A fixed state budget (not a clock) keeps generation deterministic.
-  const budget: Budget = { left: opts.stateBudget ?? 1_000_000 };
+  const budget: Budget = { left: opts.stateBudget ?? 2_000_000 };
   const startBudget = budget.left;
   let best: Scored | null = null;
+  const found: Scored[] = [];
   let acceptedCount = 0;
   let attempt = 0;
   for (; attempt < maxAttempts && budget.left > 0; attempt++) {
     const board = buildBoard(dateKey, plan, mutations, communityPick, seed, attempt);
     if (!board) continue;
     if (mutations.includes('DECAY') && !placeCracks(board, plan.tier, new SeededRng(`${seed}:cracks:${attempt}`), budget)) continue;
-    let scored = evaluate(board, plan.tier, budget);
+    let scored = evaluate(board, plan.tier, budget, best);
     for (let round = 0; round < 3 && scored && scored.decayFlat && budget.left > 0; round++) {
       if (!deepenCracks(board)) break;
-      scored = evaluate(board, plan.tier, budget);
+      scored = evaluate(board, plan.tier, budget, best);
     }
     if (!scored) continue;
     if (!best || scored.score > best.score) best = scored;
-    if (scored.relevant) {
+    if (scored.inRange) found.push(scored);
+    if (scored.relevant && scored.hard && scored.inRange) {
       acceptedCount++;
-      // Prefer the best of three good boards, but settle for one when the
+      // Prefer the better of two good boards, but settle for one when the
       // search is getting expensive.
-      if (acceptedCount >= 3 || budget.left < startBudget * 0.6) break;
+      if (acceptedCount >= 2 || budget.left < startBudget * 0.5) break;
+    }
+    // Keep some budget back for climbing.
+    if (budget.left < startBudget * 0.45) break;
+  }
+  if (best && !(best.relevant && best.hard && best.inRange)) {
+    // Climb from the three most promising boards, sharing what's left.
+    const [lo, hi] = parRange(plan.tier, mutations);
+    const target = (lo + hi) / 2;
+    const starts = found
+      .slice()
+      .sort((a, b) => compareKeys(climbKey(b, plan.tier, target), climbKey(a, plan.tier, target)))
+      .slice(0, 3);
+    if (starts.length === 0) starts.push(best);
+    const rng = new SeededRng(`${seed}:climb`);
+    for (let k = 0; k < starts.length && budget.left > 0; k++) {
+      const share: Budget = { left: Math.floor(budget.left / (starts.length - k)) };
+      const before = share.left;
+      const top = climb(starts[k] as Scored, plan.tier, mutations, share, rng, 60);
+      budget.left -= before - share.left;
+      if (top.score > best.score) best = top;
+      if (best.relevant && best.hard && best.inRange) break;
     }
   }
   const used = startBudget - budget.left;
   if (best && best.puzzle.par >= 4) {
-    return { puzzle: best.puzzle, relevant: best.relevant, fallback: false, attempts: attempt, statesUsed: used };
+    return { puzzle: best.puzzle, relevant: best.relevant, hard: best.hard, gap: best.gap, fallback: false, attempts: attempt, statesUsed: used };
   }
 
   const fb = fallbackPuzzle(dateKey, plan, mutations, communityPick, seed);
   const res = solve(compileWorld(fb), { maxDepth: 40, maxStates: 120000 });
   fb.par = res.solvable ? res.par : 0;
   fb.solution = res.path.join('');
-  return { puzzle: fb, relevant: false, fallback: true, attempts: attempt, statesUsed: used };
+  return { puzzle: fb, relevant: false, hard: false, gap: 0, fallback: true, attempts: attempt, statesUsed: used };
 }
 
 /** Strip the answer before sending a puzzle to someone who has not solved it. */

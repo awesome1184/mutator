@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { addDays, dateToMs } from '../src/shared/engine/date.ts';
 import { dayPlan } from '../src/shared/engine/schedule.ts';
 import { createMemoryKv } from '../src/shared/memoryKv.ts';
-import { castVote, getState, loadPuzzle, submit, type Env } from '../src/shared/service.ts';
+import { castVote, getState, loadPuzzle, prepareTomorrow, submit, type Env } from '../src/shared/service.ts';
+import { generatePuzzle } from '../src/shared/engine/generator.ts';
 
 function envFor(kv: ReturnType<typeof createMemoryKv>, name: string | null, date: string, hour = 12): Env {
   return { kv, now: () => dateToMs(date) + hour * 3_600_000, user: { name, avatar: null } };
@@ -74,4 +75,17 @@ test('the future is never served', async () => {
   const kv = createMemoryKv();
   const s = await getState(envFor(kv, null, '2026-12-02'), '2026-12-09');
   assert.equal(s.date, '2026-12-02');
+});
+
+test('a puzzle built the day before is the one that gets served', async () => {
+  const kv = createMemoryKv();
+  const day = '2026-12-07';
+  const left = await prepareTomorrow(envFor(kv, null, addDays(day, -1)));
+  assert.equal(left, dayPlan(day).candidates.length);
+  const draft = kv.data.hash[`drafts:v6:${day}`]?.none;
+  assert.ok(draft);
+  const served = await loadPuzzle(envFor(kv, null, day), day);
+  assert.equal(JSON.stringify(served), draft);
+  assert.equal(JSON.stringify(served), JSON.stringify(generatePuzzle(day)));
+  assert.equal(kv.data.hash[`drafts:v6:${day}`], undefined);
 });

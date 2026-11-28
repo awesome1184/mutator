@@ -27,6 +27,7 @@ import { starsFor } from './scoring.ts';
 export type Kv = {
   get(key: string): Promise<string | undefined | null>;
   set(key: string, value: string, opts?: { nx?: boolean }): Promise<unknown>;
+  del(key: string): Promise<unknown>;
   hGet(key: string, field: string): Promise<string | undefined | null>;
   hSet(key: string, values: Record<string, string>): Promise<unknown>;
   hSetNX(key: string, field: string, value: string): Promise<number>;
@@ -50,6 +51,8 @@ export type Env = {
 
 const K = {
   puzzle: (d: string) => `puzzle:v${RULES_VERSION}:${d}`,
+  /** Puzzles built ahead of time, one per possible vote outcome. */
+  drafts: (d: string) => `drafts:v${RULES_VERSION}:${d}`,
   results: (d: string) => `results:${d}`,
   board: (d: string) => `board:${d}`,
   stats: (d: string) => `stats:${d}`,
@@ -87,13 +90,32 @@ export async function loadPuzzle(env: Env, date: string): Promise<Puzzle> {
   const cached = await env.kv.get(K.puzzle(date));
   if (cached) return JSON.parse(cached) as Puzzle;
   const pick = await communityPick(env.kv, date);
-  const puzzle = generatePuzzle(date, { pick });
+  // A draft is exactly what generatePuzzle would return, built earlier by prepareTomorrow.
+  const draft = await env.kv.hGet(K.drafts(date), pick ?? 'none');
+  const puzzle = draft ? (JSON.parse(draft) as Puzzle) : generatePuzzle(date, { pick });
   await env.kv.set(K.puzzle(date), JSON.stringify(puzzle), { nx: true });
   // Re-read so concurrent generators agree on the stored copy.
   const stored = await env.kv.get(K.puzzle(date));
   const final = stored ? (JSON.parse(stored) as Puzzle) : puzzle;
   await env.kv.zAdd(K.days, date, final.number);
+  await env.kv.del(K.drafts(date));
   return final;
+}
+
+/**
+ * Builds one of tomorrow's possible puzzles (one per vote outcome) so the
+ * daily post doesn't wait on the generator. Builds at most one per call to
+ * keep each scheduled run short. Returns how many are still to build.
+ */
+export async function prepareTomorrow(env: Env): Promise<number> {
+  const date = addDays(todayKey(env.now()), 1);
+  const picks: (MutationId | null)[] = [null, ...dayPlan(date).candidates];
+  const have = await env.kv.hGetAll(K.drafts(date));
+  const missing = picks.filter((m) => !have[m ?? 'none']);
+  const next = missing[0];
+  if (next === undefined) return 0;
+  await env.kv.hSet(K.drafts(date), { [next ?? 'none']: JSON.stringify(generatePuzzle(date, { pick: next })) });
+  return missing.length - 1;
 }
 
 export function resolveDate(env: Env, requested: unknown): string {

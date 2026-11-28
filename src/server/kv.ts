@@ -5,6 +5,7 @@ import type { Kv } from '../shared/service.ts';
 export const redisKv: Kv = {
   get: (key) => redis.get(key),
   set: (key, value, opts) => (opts?.nx ? redis.set(key, value, { nx: true }) : redis.set(key, value)),
+  del: (key) => redis.del(key),
   hGet: (key, field) => redis.hGet(key, field),
   hSet: (key, values) => redis.hSet(key, values),
   hSetNX: (key, field, value) => redis.hSetNX(key, field, value),

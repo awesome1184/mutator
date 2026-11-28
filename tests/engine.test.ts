@@ -8,6 +8,8 @@ import { initialState, replay, stateKey, step } from '../src/shared/engine/sim.t
 import { solve } from '../src/shared/engine/solver.ts';
 import { compileWorld } from '../src/shared/engine/world.ts';
 import { nextBlight, previewActions } from '../src/shared/engine/forecast.ts';
+import { naiveGap } from '../src/shared/engine/difficulty.ts';
+import { dayPlan } from '../src/shared/engine/schedule.ts';
 import type { Action } from '../src/shared/engine/types.ts';
 import { at, co, makePuzzle, walls } from './helpers.ts';
 
@@ -38,6 +40,7 @@ test('the community pick changes the puzzle deterministically', () => {
 
 test('stored par routes replay to a solve in exactly par moves', () => {
   let d = '2026-12-07';
+  let hard = 0;
   for (let i = 0; i < 7; i++) {
     const p = generatePuzzle(d);
     const actions = parseActions(p.solution ?? '');
@@ -45,8 +48,11 @@ test('stored par routes replay to a solve in exactly par moves', () => {
     const r = replay(compileWorld(p), actions);
     assert.ok(r.ok && r.solved, `${d} solution does not solve`);
     assert.equal(r.solvedAt, p.par, `${d} par mismatch`);
+    if (naiveGap(compileWorld(p), initialState(compileWorld(p)), p.par) >= dayPlan(d).tier.gap) hard++;
     d = addDays(d, 1);
   }
+  // Most days should beat a player who just heads for the nearest goal by the day's margin.
+  assert.ok(hard >= 5, `only ${hard} of 7 days were hard enough`);
 });
 
 test('replaying a route twice gives identical states and events', () => {

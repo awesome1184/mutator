@@ -30,6 +30,13 @@ export function createMemoryKv(initial?: Data, onChange?: (data: Data) => void):
       changed();
       return 'OK';
     },
+    async del(key) {
+      delete data.str[key];
+      delete data.hash[key];
+      delete data.zset[key];
+      changed();
+      return 1;
+    },
     async hGet(key, field) {
       return data.hash[key]?.[field];
     },

@@ -14,6 +14,7 @@ let d = start;
 let relevant = 0;
 let fallback = 0;
 let inRange = 0;
+let hard = 0;
 let worst = 0;
 let total = 0;
 for (let i = 0; i < days; i++) {
@@ -31,9 +32,10 @@ for (let i = 0; i < days; i++) {
   if (rep.relevant) relevant++;
   if (rep.fallback) fallback++;
   if (ok) inRange++;
+  if (rep.hard) hard++;
   console.log(
-    `${d} ${p.tier.padEnd(8)} ${p.mutations.join('+').padEnd(42)} par ${String(p.par).padStart(2)} [${lo}-${hi}] ${rep.relevant ? 'relevant' : '--------'} ${rep.fallback ? 'FALLBACK' : ''} ${ms.toFixed(0).padStart(5)}ms`
+    `${d} ${p.tier.padEnd(8)} ${p.mutations.join('+').padEnd(42)} par ${String(p.par).padStart(2)} [${lo}-${hi}] ${rep.relevant ? 'relevant' : '--------'} gap ${rep.gap >= 99 ? 'stuck' : String(rep.gap).padStart(5)}/${dayPlan(d).tier.gap} ${rep.hard ? '    ' : 'EASY'} ${rep.fallback ? 'FALLBACK' : ''} ${ms.toFixed(0).padStart(5)}ms`
   );
   d = addDays(d, 1);
 }
-console.log(`\n${days} days: relevant ${relevant}, in range ${inRange}, fallback ${fallback}, avg ${(total / days).toFixed(0)}ms, worst ${worst.toFixed(0)}ms`);
+console.log(`\n${days} days: relevant ${relevant}, hard enough ${hard}, in range ${inRange}, fallback ${fallback}, avg ${(total / days).toFixed(0)}ms, worst ${worst.toFixed(0)}ms`);

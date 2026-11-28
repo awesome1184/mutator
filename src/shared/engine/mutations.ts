@@ -416,7 +416,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     short: 'Step on a paint splash to take its colour. Coloured barriers only let that colour through.',
     rule: 'Walking onto a green or violet splash paints you that colour (your ring shows it). A barrier of one colour only lets you through while you are that colour. Drones, echoes and crates can never pass a barrier.',
     tip: 'Plan the order: each splash you cross repaints you.',
-    pool: 'core',
+    pool: 'mild',
     timed: false
   },
   KEYS: {

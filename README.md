@@ -55,6 +55,9 @@ small tweaks on a plain board. The pools are defined by the `pool` field in
 
 ## What's on Reddit
 
+- **Puzzles built ahead.** An hourly job builds tomorrow's puzzle for each
+  possible vote outcome, one per run, so the daily post never waits on the
+  generator. If a draft is missing, the puzzle is built on demand as before.
 - **A daily post.** A scheduled job creates the day's post at 00:01 UTC, pins
   it, unpins yesterday's, and comments a short recap of yesterday (solvers,
   share on par, top three).
@@ -95,6 +98,34 @@ secret, and the UI didn't fit on a phone. This rebuild:
   streaks, votes, flair, comments and an archive;
 - replaces the whole UI with a new design that fits a phone screen without
   scrolling.
+
+## Difficulty
+
+Par alone doesn't say whether a puzzle is hard: a long walk can still be
+obvious. So the generator also plays each candidate board as a naive player.
+That player looks one to three moves ahead (the landing previews show one),
+heads for whatever leaves the shortest walk to the cells and the exit, and will
+make a single stop for a key, a paint splash or a door plate when it opens a
+shorter walk. They use the belts and portals they can see.
+
+The difficulty of a board is how many moves over par that player ends up. Each
+weekday has a target:
+
+| Day | Naive player at least this far over par |
+| --- | --- |
+| Monday | 1 (but no more than 5) |
+| Tuesday | 2 (but no more than 7) |
+| Wednesday, Thursday | 3 |
+| Friday | 4 |
+| Saturday | 5 |
+| Sunday | 4 |
+
+The generator first tries fresh boards, then climbs: it nudges the most
+promising boards one tile at a time (a wall, a feature, a cell or the exit),
+mostly on the route the naive player takes, and keeps a nudge when it makes the
+board harder. Throughout, a board must keep par in range and every mutation
+must still change the best route. The naive player lives in
+`src/shared/engine/difficulty.ts`.
 
 ## Determinism
 
@@ -160,11 +191,12 @@ the post automatically.
 ```bash
 npm run audit:days -- 2026-12-01 28    # generate four weeks, check par and timing
 npm run audit:pairs -- 2026-12-02      # every two-mutation combination
+npm run audit:difficulty -- 2026-12-05 # how hard each pairing comes out
 ```
 
 At the time of writing, every single mutation and every two-mutation pair
-generates without falling back to the emergency board. In a 56-day run every puzzle
-landed in its par range, and the slowest day took about 5.5 s to generate.
+generates without falling back to the emergency board. In a 42-day run every
+puzzle landed in its par range. Generation takes 2 to 10 s per day.
 
 ## Hackathon checklist
 

@@ -16,6 +16,7 @@
     "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"tests/*.test.ts\"",
     "audit:days": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-days.ts",
     "audit:pairs": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-pairs.ts",
+    "audit:difficulty": "node --experimental-strip-types --no-warnings=ExperimentalWarning tools/audit-difficulty.ts",
     "build:offline": "vite build --config vite.offline.config.ts && mv dist/offline/game.html dist/offline/mutator.html"
   },
   "engines": {
