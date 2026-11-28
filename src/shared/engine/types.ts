@@ -45,7 +45,9 @@ export type MutationId =
   | 'PUCKS'
   | 'SHUTTLES'
   | 'HATCHES'
-  | 'LOW_CHARGE';
+  | 'LOW_CHARGE'
+  | 'LASERS'
+  | 'TOW';
 
 export type DirTile = Coord & { dir: Dir };
 export type RotTile = Coord & { rot: 1 | -1 };
@@ -109,6 +111,8 @@ export type Puzzle = {
   chargers?: Coord[];
   /** How many moves a full charge lasts (Low Charge). */
   charge?: number;
+  /** Laser emitters and the way each faces at the start (Lasers). */
+  lasers?: DirTile[];
   droneStart: Coord | null;
   echoStart: Coord | null;
   beam: PulseBeam | null;
@@ -200,6 +204,7 @@ export type StepEvent =
   | { t: 'shuttle'; index: number; from: number; to: number }
   | { t: 'hatch'; from: number; to: number }
   | { t: 'charge'; at: number }
+  | { t: 'tow'; from: number; to: number }
   | { t: 'solved' };
 
 export type StepResult =

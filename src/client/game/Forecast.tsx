@@ -29,6 +29,7 @@ const ROW_DEFS: Row[] = [
   { id: 'VENTILATION', label: 'Vents', cell: (t) => ({ text: t.vents ? 'on' : 'off', on: !!t.vents }) },
   { id: 'TURNTABLES', label: 'Gears turn after', cell: (t) => ({ text: t.spinAfter ? '↻' : '', on: t.spinAfter }) },
   { id: 'INFECTION', label: 'Blight grows after', cell: (t) => ({ text: t.blightAfter ? '+1' : '', on: t.blightAfter }) },
+  { id: 'LASERS', label: 'Lasers turn after', cell: (t) => ({ text: t.lasersTurnAfter ? '↻' : '', on: t.lasersTurnAfter }) },
   { id: 'HATCHES', label: 'Exit at', cell: (t) => ({ text: t.exitAt ?? '', on: !!t.exitMoves }) }
 ];
 

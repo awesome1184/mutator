@@ -2,9 +2,13 @@
 // mutations meet and checks the outcome the rules text promises.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, replay, step } from '../src/shared/engine/sim.ts';
+import { initialState, laserBeams, replay, step } from '../src/shared/engine/sim.ts';
+import type { GameState } from '../src/shared/engine/types.ts';
 import { compileWorld } from '../src/shared/engine/world.ts';
 import { at, co, makePuzzle, walls } from './helpers.ts';
+import type { StepResult } from '../src/shared/engine/types.ts';
+
+const st = (r: StepResult) => (r.ok ? r.state : undefined);
 
 const far = { cells: [co(0, 0), co(0, 1)] as [ReturnType<typeof co>, ReturnType<typeof co>], exit: co(0, 6) };
 
@@ -336,3 +340,176 @@ test('low charge + mud: pulling free of mud costs a charge', () => {
   assert.equal(r.states[2]?.charge, 0);
 });
 
+
+const ks = { keys: [co(3, 2)], locks: [co(5, 5)] };
+
+test('crates + keys: a crate pushed onto a key picks it up for you', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'KEYS'], ...far, start: co(3, 0), crates: [co(3, 1)], ...ks }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.keys, 1);
+  assert.deepEqual(r.state.crates, [at(3, 2)]);
+});
+
+test('keys + pucks: a sliding puck scoops up every key it crosses', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'KEYS'], ...far, start: co(3, 0), crates: [co(3, 1)], keys: [co(3, 3), co(3, 4)], locks: [co(5, 5), co(5, 4)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.equal(r.state.keys, 2);
+  assert.deepEqual(r.state.crates, [at(3, 6)]);
+});
+
+test('crates + springs: a crate pushed onto a spring is thrown 2 tiles', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'SPRINGS'], ...far, start: co(3, 0), crates: [co(3, 1)], springs: [co(3, 2)] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 4)]);
+});
+
+test('pucks + springs: a puck is thrown and keeps sliding', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'SPRINGS'], ...far, start: co(3, 0), crates: [co(3, 1)], springs: [co(3, 2)], grid: walls([3, 6]) }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 5)]);
+});
+
+test('mud + pucks: mud stops a sliding puck', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'MUD'], ...far, start: co(3, 0), crates: [co(3, 1)], mud: [co(3, 3)] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 3)]);
+});
+
+test('pucks + prisms: a prism turns a sliding puck', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'REFLECTORS'], ...far, start: co(3, 0), crates: [co(3, 1)], reflectors: [{ r: 3, c: 3, rot: 1 }] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(6, 3)]);
+});
+
+test('crates + prisms: a crate pushed onto a prism is turned one tile', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'REFLECTORS'], ...far, start: co(3, 0), crates: [co(3, 1)], reflectors: [{ r: 3, c: 2, rot: 1 }] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(4, 2)]);
+});
+
+test('crates + one-way gates: only along the arrow', () => {
+  const ok = compileWorld(makePuzzle({ mutations: ['CRATES', 'ONE_WAY_GATES'], ...far, start: co(3, 0), crates: [co(3, 1)], oneWays: [{ r: 3, c: 2, dir: 'R' }] }));
+  assert.deepEqual(st(step(ok, initialState(ok), 'R'))?.crates, [at(3, 2)]);
+  const no = compileWorld(makePuzzle({ mutations: ['CRATES', 'ONE_WAY_GATES'], ...far, start: co(3, 0), crates: [co(3, 1)], oneWays: [{ r: 3, c: 2, dir: 'L' }] }));
+  assert.equal(step(no, initialState(no), 'R').ok, false);
+});
+
+test('pucks + one-way gates: a puck stops in front of a gate facing the wrong way', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'ONE_WAY_GATES'], ...far, start: co(3, 0), crates: [co(3, 1)], oneWays: [{ r: 3, c: 3, dir: 'U' }] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 2)]);
+});
+
+const track = { shuttles: [[co(4, 2), co(5, 2), co(6, 2)]] };
+
+test('crates + shuttles: a crate pushed onto a shuttle rides it', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'SHUTTLES'], ...far, start: co(2, 2), crates: [co(3, 2)], ...track }));
+  assert.deepEqual(st(step(w, initialState(w), 'D'))?.crates, [at(5, 2)]);
+});
+
+test('pucks + shuttles: a puck stops on a shuttle and rides it', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'SHUTTLES'], ...far, start: co(2, 2), crates: [co(3, 2)], ...track }));
+  assert.deepEqual(st(step(w, initialState(w), 'D'))?.crates, [at(5, 2)]);
+});
+
+test('keys + mirror drone: the drone picks up keys for you', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['KEYS', 'MIRROR_DRONE'], ...far, start: co(5, 0), droneStart: co(2, 4), keys: [co(3, 4)], locks: [co(5, 5)] }));
+  assert.equal(st(step(w, initialState(w), 'U'))?.keys, 1);
+});
+
+test('echo + keys: the echo picks up keys for you', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['KEYS', 'ECHO'], ...far, start: co(5, 0), echoStart: co(3, 3), keys: [co(2, 3)], locks: [co(5, 5)] }));
+  const r = replay(w, ['U', 'W']);
+  assert.equal(r.states[2]?.keys, 1);
+});
+
+test('mirror drone + mud: mud ends the drone’s belt ride', () => {
+  const w = compileWorld(
+    makePuzzle({ mutations: ['MIRROR_DRONE', 'MUD', 'CONVEYOR'], ...far, start: co(6, 0), droneStart: co(2, 2), conveyors: [{ r: 3, c: 2, dir: 'D' }, { r: 4, c: 2, dir: 'D' }], mud: [co(4, 2)] })
+  );
+  assert.equal(st(step(w, initialState(w), 'U'))?.drone, at(4, 2));
+});
+
+const laser = { lasers: [{ r: 0, c: 3, dir: 'D' as const }] };
+const litAt = (w: ReturnType<typeof compileWorld>, s: GameState, i: number): boolean => laserBeams(w, s).lit[i] === 1;
+
+test('crates + lasers: a crate in the beam cuts it off', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'LASERS'], ...far, start: co(3, 1), crates: [co(3, 2)], ...laser }));
+  const s0 = initialState(w);
+  assert.ok(litAt(w, s0, at(5, 3)));
+  const r = step(w, s0, 'R');
+  assert.ok(r.ok);
+  assert.ok(!litAt(w, r.state, at(5, 3)));
+});
+
+test('lasers + pucks: a puck slid into the beam cuts it off', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['PUCKS', 'LASERS'], ...far, start: co(3, 0), crates: [co(3, 1)], grid: walls([3, 4]), ...laser }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(3, 3)]);
+  assert.ok(!litAt(w, r.state, at(5, 3)));
+});
+
+test('lasers + mirror drone and echo: both block beams', () => {
+  const d = compileWorld(makePuzzle({ mutations: ['LASERS', 'MIRROR_DRONE'], ...far, start: co(6, 6), droneStart: co(3, 3), ...laser }));
+  assert.ok(litAt(d, initialState(d), at(2, 3)) && !litAt(d, initialState(d), at(5, 3)));
+  const e = compileWorld(makePuzzle({ mutations: ['LASERS', 'ECHO'], ...far, start: co(6, 6), echoStart: co(3, 3), ...laser }));
+  assert.ok(!litAt(e, initialState(e), at(5, 3)));
+});
+
+test('lasers + prisms: prisms bend beams', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LASERS', 'REFLECTORS'], ...far, start: co(6, 6), reflectors: [{ r: 2, c: 3, rot: 1 }], ...laser }));
+  const s = initialState(w);
+  assert.ok(litAt(w, s, at(2, 0)));
+  assert.ok(!litAt(w, s, at(3, 3)));
+});
+
+test('blast doors + lasers: a closed door stops a beam', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LASERS', 'BLAST_DOORS'], ...far, start: co(6, 6), doors: [co(2, 3)], plates: [co(6, 0)], ...laser }));
+  const s = initialState(w);
+  assert.ok(!litAt(w, s, at(3, 3)));
+  assert.ok(litAt(w, { ...s, doorsOpen: true }, at(3, 3)));
+});
+
+test('afterimage + lasers: hard-light blocks a beam', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LASERS', 'AFTERIMAGE'], ...far, start: co(6, 6), ...laser }));
+  assert.ok(!litAt(w, { ...initialState(w), after: at(2, 3) }, at(3, 3)));
+});
+
+test('lasers + phase gates: closed gates stop beams', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LASERS', 'PHASE_GATES'], ...far, start: co(6, 6), gates: [{ r: 2, c: 3, polarity: 0 }], ...laser }));
+  const s = initialState(w);
+  assert.ok(!litAt(w, s, at(3, 3)));
+  assert.ok(litAt(w, { ...s, turn: 1 }, at(3, 3)));
+});
+
+test('ice + tow: a towed block only follows one tile when you slide away', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'TOW', 'CRYO_SLICK'], ...far, start: co(3, 2), crates: [co(3, 1)], ice: [co(3, 3), co(3, 4)] }));
+  const r = step(w, initialState(w), 'R');
+  assert.ok(r.ok);
+  assert.deepEqual(r.state.crates, [at(3, 2)]);
+  assert.equal(r.state.pos, at(3, 5));
+});
+
+test('lasers + portals: a beam comes out of the partner pad', () => {
+  const w = compileWorld(
+    makePuzzle({
+      mutations: ['LASERS', 'PORTALS'],
+      ...far,
+      start: co(6, 6),
+      portals: [
+        { r: 2, c: 3, label: 0 },
+        { r: 4, c: 6, label: 1 },
+        { r: 6, c: 0, label: 2 },
+        { r: 1, c: 6, label: 3 }
+      ],
+      ...laser
+    })
+  );
+  const s = initialState(w);
+  assert.ok(litAt(w, s, at(5, 6)));
+  assert.ok(!litAt(w, s, at(3, 3)));
+});
+
+test('infection + lasers: blight blocks beams', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['LASERS', 'INFECTION'], ...far, start: co(6, 6), blight: [co(3, 3)], ...laser }));
+  const s = initialState(w);
+  assert.ok(litAt(w, s, at(2, 3)));
+  assert.ok(!litAt(w, s, at(4, 3)));
+});

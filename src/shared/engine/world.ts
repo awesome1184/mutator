@@ -65,6 +65,8 @@ export type World = {
   /** Charging pads and full charge (Low Charge). */
   chargerAt: Uint8Array;
   chargeMax: number;
+  /** Laser emitters (Lasers). Each is also a wall. */
+  emitters: { at: number; dir: Dir }[];
   blightStart: number[];
   blightOrder: Dir[];
   /** Whether the state key must include the turn number. */
@@ -181,6 +183,8 @@ export function compileWorld(puzzle: Puzzle): World {
   for (const t of tracks) for (const i of t) chasm[i] = 1;
   const chargerAt = new Uint8Array(CELLS);
   if (on('LOW_CHARGE')) for (const t of puzzle.chargers ?? []) chargerAt[toIdx(t)] = 1;
+  const emitters = on('LASERS') ? (puzzle.lasers ?? []).map((t) => ({ at: toIdx(t), dir: t.dir })) : [];
+  for (const e of emitters) base.wall[e.at] = 1;
   const hatches = [toIdx(puzzle.exit), ...(on('HATCHES') ? (puzzle.hatches ?? []).map(toIdx) : [])];
   const isHatch = new Uint8Array(CELLS);
   for (const h of hatches) isHatch[h] = 1;
@@ -267,7 +271,8 @@ export function compileWorld(puzzle: Puzzle): World {
       'FLOOD',
       'PHASE_LAYERS',
       'SHUTTLES',
-      'HATCHES'
+      'HATCHES',
+      'LASERS'
     ].includes(m)
   );
 
@@ -295,6 +300,7 @@ export function compileWorld(puzzle: Puzzle): World {
     chasm,
     chargerAt,
     chargeMax: on('LOW_CHARGE') ? Math.max(1, Math.min(15, puzzle.charge ?? 6)) : 0,
+    emitters,
     echoStart: on('ECHO') && puzzle.echoStart ? toIdx(puzzle.echoStart) : -1,
     blightStart: on('INFECTION') ? puzzle.blight.map(toIdx) : [],
     blightOrder: puzzle.blightOrder.length === 4 ? puzzle.blightOrder : ['U', 'R', 'D', 'L'],
@@ -396,6 +402,11 @@ export function shuttleAt(w: World, k: number, turn: number): number {
 export function shuttleHere(w: World, i: number, turn: number): boolean {
   for (let k = 0; k < w.tracks.length; k++) if (shuttleAt(w, k, turn) === i) return true;
   return false;
+}
+
+/** Which way a laser emitter faces after `turn` moves: a quarter turn clockwise every 3 moves. */
+export function emitterDir(base: Dir, turn: number): Dir {
+  return rotateDir(base, Math.floor(turn / 3) % 4) as Dir;
 }
 
 /** Moves between exit hops (Hatches). */

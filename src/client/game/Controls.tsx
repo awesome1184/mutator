@@ -17,6 +17,12 @@ type Props = {
   onFocus: (a: Action | null) => void;
 };
 
+function towable(s: GameState): boolean {
+  const r = Math.floor(s.pos / 7);
+  const c = s.pos % 7;
+  return s.crates.some((x) => Math.abs(Math.floor(x / 7) - r) + Math.abs((x % 7) - c) === 1);
+}
+
 const NAMES: Record<Action, string> = { U: 'Up', R: 'Right', D: 'Down', L: 'Left', W: 'Hold' };
 
 export function Controls({ world, state, previews, canUndo, disabled, onAction, onUndo, onRestart, onFocus }: Props) {
@@ -53,6 +59,7 @@ export function Controls({ world, state, previews, canUndo, disabled, onAction, 
         {surge && <span className="mod">This move goes 2 tiles</span>}
         {ghost && <span className="mod">This move can pass through a wall</span>}
         {state.stuck && <span className="mod">Stuck in mud: this move only pulls you free</span>}
+        {world.has.TOW && towable(state) && <span className="mod">Step away from a block beside you to drag it along</span>}
       </div>
       <div className="pad-grid">
         {pad('U')}

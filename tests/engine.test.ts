@@ -6,12 +6,15 @@ import { generatePuzzle } from '../src/shared/engine/generator.ts';
 import { parseActions } from '../src/shared/engine/grid.ts';
 import { initialState, replay, stateKey, step } from '../src/shared/engine/sim.ts';
 import { solve } from '../src/shared/engine/solver.ts';
-import { compileWorld, exitFor } from '../src/shared/engine/world.ts';
+import { compileWorld, emitterDir, exitFor } from '../src/shared/engine/world.ts';
 import { nextBlight, previewActions } from '../src/shared/engine/forecast.ts';
 import { difficultyOf } from '../src/shared/engine/difficulty.ts';
 import { dayPlan } from '../src/shared/engine/schedule.ts';
 import type { Action } from '../src/shared/engine/types.ts';
 import { at, co, makePuzzle, walls } from './helpers.ts';
+import type { StepResult } from '../src/shared/engine/types.ts';
+
+const st = (r: StepResult) => (r.ok ? r.state : undefined);
 
 test('engine source never touches randomness or the clock', () => {
   const dir = new URL('../src/shared/engine/', import.meta.url);
@@ -334,4 +337,20 @@ test('low charge: moves use charge, chargers and cells refill it, empty means st
   const cell = compileWorld({ ...p, cells: [co(3, 1), co(6, 6)], chargers: [] });
   const c = replay(cell, ['U', 'D', 'R']);
   assert.equal(c.states[3]?.charge, 3);
+});
+
+test('lasers: you cannot step into a beam, and emitters turn every 3 moves', () => {
+  const p = makePuzzle({ mutations: ['LASERS'], start: co(3, 2), cells: [co(0, 0), co(6, 6)], lasers: [{ r: 0, c: 3, dir: 'D' }] });
+  const w = compileWorld(p);
+  assert.equal(step(w, initialState(w), 'R').ok, false);
+  assert.equal(emitterDir('D', 3), 'L');
+  // After 3 moves the emitter faces left, along the top edge, so the column is clear.
+  const r = replay(w, ['W', 'W', 'W', 'R']);
+  assert.ok(r.ok, `failed at ${r.failedAt}`);
+});
+
+test('tow: stepping away from a crate drags it after you', () => {
+  const w = compileWorld(makePuzzle({ mutations: ['CRATES', 'TOW'], start: co(3, 2), cells: [co(0, 0), co(6, 6)], crates: [co(3, 1)] }));
+  assert.deepEqual(st(step(w, initialState(w), 'R'))?.crates, [at(3, 2)]);
+  assert.deepEqual(st(step(w, initialState(w), 'U'))?.crates, [at(3, 1)]);
 });

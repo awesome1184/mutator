@@ -18,6 +18,7 @@ import {
   beamLine,
   cellPosAt,
   closedPolarity,
+  emitterDir,
   exitFor,
   shuttleAt,
   shuttleHere,
@@ -124,11 +125,13 @@ type Ctx = {
   phaseLayer: 0 | 1;
   closedPol: 0 | 1;
   portalUsed: boolean;
+  /** Tiles a laser beam crosses this move (Lasers), worked out at the start of the move. */
+  lit: Uint8Array | null;
   left: number[];
   events: StepEvent[];
 };
 
-type Mover = 'courier' | 'drone' | 'echo';
+type Mover = 'courier' | 'drone' | 'echo' | 'crate';
 
 /** Where cell k is now: it orbits by schedule, flees (Skittish) or stays put. */
 export function cellAt(w: World, s: { cells: number[]; turn: number }, k: number): number {
@@ -151,7 +154,8 @@ function blocked(ctx: Ctx, i: number, dir: Dir | null, who: Mover, sight = false
   const lk = ctx.w.lockAt[i] as number;
   if (lk >= 0 && !(ctx.locksOpen & (1 << lk)) && !(who === 'courier' && !sight && ctx.keys > 0)) return true;
   // Chasm (Shuttles): only the courier can step onto a shuttle parked there.
-  if (ctx.w.chasm[i] && (who !== 'courier' || !shuttleHere(ctx.w, i, ctx.turn))) return true;
+  if (ctx.w.chasm[i] && ((who !== 'courier' && who !== 'crate') || !shuttleHere(ctx.w, i, ctx.turn))) return true;
+  if (who === 'courier' && ctx.lit && ctx.lit[i]) return true;
   if (who !== 'drone' && ctx.drone === i) return true;
   if (who !== 'echo' && ctx.echo === i) return true;
   if (who !== 'courier' && ctx.pos === i) return true;
@@ -195,6 +199,16 @@ function pressPlate(ctx: Ctx, at: number): void {
   ctx.events.push({ t: 'doors', open: ctx.doorsOpen, at });
 }
 
+/** Picks up the key on tile `at`, if there is one, for you (whoever reached it). */
+function takeKey(ctx: Ctx, at: number): void {
+  const key = ctx.w.keyAt[at] as number;
+  if (key >= 0 && !(ctx.keysTaken & (1 << key))) {
+    ctx.keysTaken |= 1 << key;
+    ctx.keys += 1;
+    ctx.events.push({ t: 'key', at });
+  }
+}
+
 /** Moves the courier into `to`, recording the event and applying arrival effects. */
 function courierEnter(ctx: Ctx, to: number, ev: StepEvent): void {
   ctx.left.push(ctx.pos);
@@ -204,12 +218,7 @@ function courierEnter(ctx: Ctx, to: number, ev: StepEvent): void {
   collectAt(ctx, to);
   pressPlate(ctx, to);
   const w = ctx.w;
-  const key = w.keyAt[to] as number;
-  if (key >= 0 && !(ctx.keysTaken & (1 << key))) {
-    ctx.keysTaken |= 1 << key;
-    ctx.keys += 1;
-    ctx.events.push({ t: 'key', at: to });
-  }
+  takeKey(ctx, to);
   const lock = w.lockAt[to] as number;
   if (lock >= 0 && !(ctx.locksOpen & (1 << lock)) && ctx.keys > 0) {
     ctx.keys -= 1;
@@ -235,11 +244,10 @@ function crateCanEnter(ctx: Ctx, to: number, d: Dir): boolean {
   if (to < 0 || ctx.crates.includes(to)) return false;
   if (w.isHatch[to] || ctx.cells.includes(to) || to === ctx.pos || to === ctx.echo || to === ctx.drone) return false;
   if (w.chargerAt[to]) return false;
-  if ((L.vent[to] as number) >= 0 || L.refl[to] || L.rotor[to] || (L.oneway[to] as number) >= 0) return false;
-  if (L.spring[to] || (w.keyAt[to] as number) >= 0) return false;
+  if ((L.vent[to] as number) >= 0 || L.rotor[to]) return false;
   if (!w.has.SKITTISH_CELLS && w.has.ORBITAL_CELLS && w.cellTiles[to]) return false;
   if (ctx.decay[to] === 0) return true;
-  return !blocked(ctx, to, d, 'echo');
+  return !blocked(ctx, to, d, 'crate');
 }
 
 function moveCrate(ctx: Ctx, from: number, to: number): 'moved' | 'filled' {
@@ -253,6 +261,8 @@ function moveCrate(ctx: Ctx, from: number, to: number): 'moved' | 'filled' {
   }
   ctx.crates = [...ctx.crates, to].sort((a, b) => a - b);
   pressPlate(ctx, to);
+  // A pushed block that lands on a key scoops it up for you.
+  takeKey(ctx, to);
   return 'moved';
 }
 
@@ -270,7 +280,11 @@ function pushCrate(ctx: Ctx, at: number, d: Dir): boolean {
   let travel: Dir = d;
   let warped = false;
   const beltsUsed = new Set<number>();
+  const turned = new Set<number>();
+  const sprung = new Set<number>();
   for (let iter = 0; iter < 24; iter++) {
+    // Mud stops anything dead.
+    if (w.has.MUD && L.mud[cur]) break;
     if (w.has.PORTALS && !warped && (w.portalAt[cur] as number) >= 0) {
       const dest = w.portalPos[portalPartner(w.portalAt[cur] as number, portalMode(ctx.turn))] as number;
       warped = true;
@@ -289,6 +303,28 @@ function pushCrate(ctx: Ctx, at: number, d: Dir): boolean {
         if (moveCrate(ctx, cur, nxt) === 'filled') return true;
         cur = nxt;
         travel = bd;
+        continue;
+      }
+    }
+    // A prism turns a moving block and sends it one tile the new way.
+    if (w.has.REFLECTORS && L.refl[cur] && !turned.has(cur)) {
+      turned.add(cur);
+      const nd = rotateDir(travel, L.refl[cur] as number);
+      const nxt = nb(w, cur, nd);
+      if (!crateCanEnter(ctx, nxt, nd)) break;
+      if (moveCrate(ctx, cur, nxt) === 'filled') return true;
+      cur = nxt;
+      travel = nd;
+      continue;
+    }
+    // A spring throws a block two tiles onward, over whatever is between.
+    if (w.has.SPRINGS && L.spring[cur] && !sprung.has(cur)) {
+      sprung.add(cur);
+      const mid = nb(w, cur, travel);
+      const land = mid >= 0 ? nb(w, mid, travel) : -1;
+      if (land >= 0 && crateCanEnter(ctx, land, travel)) {
+        if (moveCrate(ctx, cur, land) === 'filled') return true;
+        cur = land;
         continue;
       }
     }
@@ -314,6 +350,7 @@ function droneSettle(ctx: Ctx, travelIn: Dir): void {
   const beltsUsed = new Set<number>();
   for (let iter = 0; iter < 24 && ctx.drone >= 0; iter++) {
     const p = ctx.drone;
+    if (w.has.MUD && L.mud[p]) break;
     const cv = L.conv[p] as number;
     let d: Dir | null = null;
     if (w.has.CONVEYOR && cv >= 0 && !beltsUsed.has(p)) {
@@ -329,6 +366,7 @@ function droneSettle(ctx: Ctx, travelIn: Dir): void {
     ctx.drone = nxt;
     travel = d;
     pressPlate(ctx, nxt);
+    takeKey(ctx, nxt);
   }
 }
 
@@ -338,6 +376,7 @@ function droneStep(ctx: Ctx, d: Dir): boolean {
   ctx.events.push({ t: 'drone', from: ctx.drone, to: tgt });
   ctx.drone = tgt;
   pressPlate(ctx, tgt);
+  takeKey(ctx, tgt);
   droneSettle(ctx, d);
   return true;
 }
@@ -549,6 +588,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     phaseLayer: activePhaseLayer(turn),
     closedPol: closedPolarity(turn),
     portalUsed: false,
+    lit: w.emitters.length > 0 ? litTiles(w, s) : null,
     left: [],
     events: []
   };
@@ -585,6 +625,14 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       if (blocked(ctx, nxt, moveDir, 'courier')) break;
       courierEnter(ctx, nxt, { t: 'move', from, to: nxt, kind: k === 0 && kind === 'inertia' ? 'walk' : kind });
       if ((L.oneway[nxt] as number) >= 0) ctx.events.push({ t: 'oneway', at: nxt });
+      // Tow: a crate or puck right behind you follows into the tile you left.
+      if (w.has.TOW && k === 0) {
+        const behind = nb(w, from, opposite(moveDir));
+        if (behind >= 0 && ctx.crates.includes(behind) && crateCanEnter(ctx, from, moveDir)) {
+          moveCrate(ctx, behind, from);
+          ctx.events.push({ t: 'tow', from: behind, to: from });
+        }
+      }
       moved = true;
       if (ctx.mudLocked) break;
     }
@@ -599,6 +647,7 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
       ctx.events.push({ t: 'echo', from: ctx.echo, to: tgt });
       ctx.echo = tgt;
       pressPlate(ctx, tgt);
+      takeKey(ctx, tgt);
     }
   }
   const moved = s.stuck ? null : moveDir;
@@ -742,6 +791,10 @@ function stepInner(w: World, s: GameState, action: Action): StepResult {
     const to = shuttleAt(w, k, next);
     if (from === to) continue;
     ctx.events.push({ t: 'shuttle', index: k, from, to });
+    if (ctx.crates.includes(from)) {
+      ctx.crates = ctx.crates.map((c) => (c === from ? to : c)).sort((a, b) => a - b);
+      ctx.events.push({ t: 'crate', from, to });
+    }
     if (pos === from) {
       ctx.events.push({ t: 'ride', from, to });
       pos = to;
@@ -907,6 +960,66 @@ export function replay(w: World, actions: readonly Action[]): Replay {
 }
 
 /** Deterministic fingerprint of a state (used by the solver and tests). */
+type BeamState = Pick<GameState, 'turn' | 'pos' | 'drone' | 'echo' | 'crates' | 'after' | 'doorsOpen' | 'blight' | 'locksOpen'>;
+
+/**
+ * Laser beams (Lasers) as they stand: each runs from its emitter until
+ * something solid stops it, turning at prisms. Returns the lit tiles and,
+ * for drawing, the path of each beam.
+ */
+export function laserBeams(w: World, s: BeamState): { lit: Uint8Array; paths: number[][] } {
+  const lit = new Uint8Array(CELLS);
+  const paths: number[][] = [];
+  const L = layerFor(w, s.turn);
+  const layer = activePhaseLayer(s.turn);
+  const closed = closedPolarity(s.turn);
+  const solid = (i: number): boolean =>
+    L.wall[i] === 1 ||
+    i === s.pos ||
+    i === s.drone ||
+    i === s.echo ||
+    i === s.after ||
+    s.crates.includes(i) ||
+    (L.door[i] === 1 && !s.doorsOpen) ||
+    (L.phase[i] as number) === layer ||
+    (L.gate[i] as number) === closed ||
+    s.blight[i] === 1 ||
+    ((w.lockAt[i] as number) >= 0 && !(s.locksOpen & (1 << (w.lockAt[i] as number))));
+  for (const e of w.emitters) {
+    let d = emitterDir(e.dir, s.turn);
+    let i = e.at;
+    let path = [e.at];
+    let warped = false;
+    for (let n = 0; n < CELLS * 2; n++) {
+      const j = stepIdx(i, d);
+      if (j < 0 || solid(j)) break;
+      lit[j] = 1;
+      path.push(j);
+      i = j;
+      const rf = L.refl[j] as number;
+      if (w.has.REFLECTORS && rf) d = rotateDir(d, rf);
+      // A beam that enters a portal comes out of its partner, same direction.
+      const label = w.portalAt[j] as number;
+      if (w.has.PORTALS && label >= 0 && !warped) {
+        const dest = w.portalPos[portalPartner(label, portalMode(s.turn))] as number;
+        if (dest >= 0 && !solid(dest)) {
+          warped = true;
+          paths.push(path);
+          lit[dest] = 1;
+          path = [dest];
+          i = dest;
+        }
+      }
+    }
+    paths.push(path);
+  }
+  return { lit, paths };
+}
+
+function litTiles(w: World, s: BeamState): Uint8Array {
+  return laserBeams(w, s).lit;
+}
+
 const ACTION_CODE: Record<string, number> = { U: 1, R: 2, D: 3, L: 4, W: 5 };
 
 /**

@@ -2,7 +2,7 @@ import type { Action, Coord, Dir } from './types.ts';
 
 export const N = 7;
 export const CELLS = N * N;
-export const RULES_VERSION = 7;
+export const RULES_VERSION = 8;
 
 /** Clockwise order. */
 export const DIRS: readonly Dir[] = ['U', 'R', 'D', 'L'];

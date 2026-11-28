@@ -2898,3 +2898,43 @@ button.tape:hover .tape-strip {
     opacity: 0.92;
   }
 }
+
+/* Lasers */
+.emitter rect {
+  fill: #e5383b;
+}
+
+.emitter-lens {
+  fill: #ffd1d1;
+  stroke: #e5383b;
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+
+.laser-glow {
+  fill: none;
+  stroke: rgba(229, 56, 59, 0.25);
+  stroke-width: 22;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.laser-core {
+  fill: none;
+  stroke: #e5383b;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .laser-core {
+    animation: laser-hum 900ms ease-in-out infinite;
+  }
+}
+
+@keyframes laser-hum {
+  50% {
+    stroke-width: 7;
+  }
+}

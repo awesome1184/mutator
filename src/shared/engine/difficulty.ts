@@ -14,7 +14,7 @@
 // whatever its mutations are. difficultyScore turns how far over par each one
 // ends up into the number the generator aims for.
 import { ACTIONS, CELLS, DIRS, stepIdx, wrapIdx } from './grid.ts';
-import { cellAt, step, stateKey } from './sim.ts';
+import { cellAt, laserBeams, step, stateKey } from './sim.ts';
 import type { GameState } from './types.ts';
 import { exitFor, isFloodedAt, layerFor, portalMode, portalPartner, shuttleHere, type Layer, type World } from './world.ts';
 
@@ -29,7 +29,12 @@ type Walk = { solid: Uint8Array; L: Layer; mode: 0 | 1; exit: number };
 function walkModel(w: World, s: GameState): Walk {
   const L = layerFor(w, s.turn);
   const solid = new Uint8Array(CELLS);
+  const lit = w.emitters.length > 0 ? laserBeams(w, s).lit : null;
   for (let i = 0; i < CELLS; i++) {
+    if (lit && lit[i]) {
+      solid[i] = 1;
+      continue;
+    }
     if (L.wall[i] === 1 || s.decay[i] === 0 || s.blight[i] === 1) solid[i] = 1;
     else if (w.has.FLOOD && isFloodedAt(w, s.turn, i)) solid[i] = 1;
     else if (L.door[i] && !s.doorsOpen) solid[i] = 1;

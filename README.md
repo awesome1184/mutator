@@ -3,12 +3,19 @@
 A daily puzzle for Reddit. Each day you get a 7×7 well plate and the same goal:
 pick up both cells, then reach the exit. What changes is the rules. Every day
 splices two mutations into the physics (Sunday gets three), drawn from a roster
-of 38: gravity that swings around the clock, portals that re-pair every three
+of 40: gravity that swings around the clock, portals that re-pair every three
 moves, floor that cracks behind you, a drone that mirrors you, blight that
 creeps one tile every other move, cells that run away from you, crates and
 pucks to push, edges that wrap around, springs, keys and locks, paint
 barriers, mud, shuttles across a chasm, an exit that hops between hatches, a
-charge that runs out, and more.
+charge that runs out, laser beams, a tow hook, and more.
+
+The mutations are written to interact. A sliding puck scoops up keys for you,
+springs throw crates, prisms bend both pucks and laser beams, the drone and
+the echo collect keys and block beams, shuttles carry crates, mud stops
+anything that slides, beams go through portals. Every combination rule is
+listed in `src/shared/engine/interactions.ts`, shown in the rules sheet when
+both mutations are in play, and backed by a test in `tests/synergy.test.ts`.
 
 There's no luck involved. The only randomness is in building the day's board.
 After that, the same moves always produce the same result, and everything the
@@ -88,8 +95,9 @@ secret, and the UI didn't fit on a phone. This rebuild:
 - adds forecasts, landing previews and connector lines (portal pairs, plates
   to doors, magnet and cell pulls acting on you, the gravity direction), so
   nothing the world does is hidden;
-- adds eleven new mutations: Wraparound, Skittish Cells, Crates, Springs,
-  Paint, Keys & Locks, Mud, Pucks, Shuttles, Hatches and Low Charge;
+- adds thirteen new mutations: Wraparound, Skittish Cells, Crates, Springs,
+  Paint, Keys & Locks, Mud, Pucks, Shuttles, Hatches, Low Charge, Lasers and
+  Tow;
 - adds a generator that targets a par range per weekday and rejects boards
   where any active mutation doesn't change the best route (checked by removing
   each mutation and re-solving);

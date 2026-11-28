@@ -40,7 +40,8 @@ const SIGNATURE: Partial<Record<MutationId, StepEvent['t'][]>> = {
   MUD: ['mud'],
   PUCKS: ['crate'],
   SHUTTLES: ['ride'],
-  LOW_CHARGE: ['charge']
+  LOW_CHARGE: ['charge'],
+  TOW: ['tow']
 };
 
 type Builder = {
@@ -604,11 +605,49 @@ export function buildBoard(
   }
   if (has('CRATES') || has('PUCKS')) {
     const n = rng.int(2, 4);
+    // With keys about, line a block up with a key so it can be shoved onto it.
+    if (has('KEYS') && (p.keys ?? []).length > 0 && rng.next() < 0.7) {
+      const key = toIdx(rng.pick(p.keys ?? []));
+      const t = claim(
+        b,
+        (i) =>
+          (rowOf(i) === rowOf(key) || colOf(i) === colOf(key)) &&
+          manhattan(i, key) >= 2 &&
+          manhattan(i, key) <= 4 &&
+          rowOf(i) > 0 &&
+          rowOf(i) < N - 1 &&
+          colOf(i) > 0 &&
+          colOf(i) < N - 1 &&
+          manhattan(i, start) >= 2,
+        true
+      );
+      if (t >= 0) (p.crates ??= []).push(toCoord(t));
+    }
     for (let k = 0; k < n; k++) {
       const t = claim(b, (i) => rowOf(i) > 0 && rowOf(i) < N - 1 && colOf(i) > 0 && colOf(i) < N - 1 && manhattan(i, start) >= 2, true);
       if (t >= 0) (p.crates ??= []).push(toCoord(t));
     }
     if ((p.crates ?? []).length === 0) return null;
+  }
+  if (has('LASERS')) {
+    // One or two emitters on the edge of the board, facing in.
+    const n = rng.int(1, 3);
+    const edge = (i: number): boolean => (rowOf(i) === 0 || rowOf(i) === N - 1 || colOf(i) === 0 || colOf(i) === N - 1) && manhattan(i, start) >= 2;
+    // With blocks about, aim the beam alongside one so it can be pushed in.
+    const blocks = (p.crates ?? []).map(toIdx);
+    const besideBlock = (i: number): boolean =>
+      blocks.some((c) =>
+        rowOf(i) === 0 || rowOf(i) === N - 1 ? Math.abs(colOf(i) - colOf(c)) === 1 : Math.abs(rowOf(i) - rowOf(c)) === 1
+      );
+    for (let k = 0; k < n; k++) {
+      let e = blocks.length > 0 && rng.next() < 0.75 ? claim(b, (i) => edge(i) && besideBlock(i)) : -1;
+      if (e < 0) e = claim(b, edge);
+      if (e < 0) continue;
+      const inward: Dir = rowOf(e) === 0 ? 'D' : rowOf(e) === N - 1 ? 'U' : colOf(e) === 0 ? 'R' : 'L';
+      setWall(e);
+      (p.lasers ??= []).push({ ...toCoord(e), dir: inward });
+    }
+    if ((p.lasers ?? []).length === 0) return null;
   }
   if (has('LOW_CHARGE')) {
     // A few chargers spread over the board, none right next to the start.
@@ -949,6 +988,7 @@ function perturb(src: Puzzle, rng: SeededRng, path: readonly number[]): Puzzle |
   if (p.tether) fixed[toIdx(p.tether)] = 1;
   for (const o of p.orbits) for (const c of o) fixed[toIdx(c)] = 1;
   for (const t of p.shuttles ?? []) for (const c of t) fixed[toIdx(c)] = 1;
+  for (const t of p.lasers ?? []) fixed[toIdx(t)] = 1;
   const free: number[] = [];
   for (let i = 0; i < CELLS; i++) if (!occ[i] && !fixed[i] && !wallAt(i)) free.push(i);
   if (free.length === 0) return null;
@@ -1113,6 +1153,7 @@ function fallbackPuzzle(dateKey: string, plan: DayPlan, mutations: MutationId[],
   }
   if (has('MUD')) p.mud = [{ r: 4, c: 4 }];
   if (has('PUCKS')) p.crates = [{ r: 4, c: 3 }];
+  if (has('LASERS')) p.lasers = [{ r: 2, c: 0, dir: 'R' }];
   if (has('SHUTTLES')) p.shuttles = [[{ r: 1, c: 6 }, { r: 2, c: 6 }, { r: 3, c: 6 }]];
   if (has('HATCHES')) p.hatches = [{ r: 0, c: 5 }, { r: 6, c: 5 }];
   if (has('LOW_CHARGE')) {
@@ -1153,10 +1194,11 @@ export function generateWithReport(dateKey: string, opts: GenerateOptions = {}):
     communityPick = m.communityPick;
   }
   // A catalyst needs something to act on.
-  if (mutations.includes('PAYLOAD_MASS') && !mutations.some((m) => MUTATIONS.PAYLOAD_MASS.hosts?.includes(m))) {
-    const hosts: MutationId[] = MUTATIONS.PAYLOAD_MASS.hosts ?? ['GRAVITY'];
-    const host = new SeededRng(`${dateKey}:host`).pick(hosts);
-    mutations.push(host);
+  for (const c of [...mutations]) {
+    const hosts = MUTATIONS[c]?.hosts;
+    if (hosts && !mutations.some((m) => hosts.includes(m))) {
+      mutations.push(new SeededRng(`${dateKey}:host:${c}`).pick(hosts));
+    }
   }
   mutations = mutations.filter((m) => ALL_MUTATIONS.includes(m));
   // Orbiting and skittish cells cannot both drive the cells.

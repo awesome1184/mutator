@@ -65,7 +65,9 @@ export const ALL_MUTATIONS: readonly MutationId[] = [
   'PUCKS',
   'SHUTTLES',
   'HATCHES',
-  'LOW_CHARGE'
+  'LOW_CHARGE',
+  'LASERS',
+  'TOW'
 ];
 
 export const MUTATIONS: Record<MutationId, MutationMeta> = {
@@ -398,7 +400,7 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     darkText: false,
     short: 'Walk into a crate to push it. You can never pull it.',
     rule: 'Walking into a crate pushes it one tile. Once moving, a crate slides on ice, rides belts and warps through portals. Pushed into a pit, it fills the pit and becomes floor. Gravity and magnets do not move crates, and crates block everything else. A crate on a plate presses it.',
-    tip: 'Before every push, check you can still get behind the crate later.',
+    tip: 'Before every push, check you can still get behind the crate later. A crate pushed onto a key picks it up for you.',
     pool: 'core',
     clashes: ['PUCKS'],
     timed: false
@@ -491,6 +493,30 @@ export const MUTATIONS: Record<MutationId, MutationMeta> = {
     rule: 'You start with a full charge, shown as the segments of your ring. Every move uses one, holding too. Ending a move on a charger, or picking up a cell, fills you back up. With no charge left you cannot move.',
     tip: 'Plan your route charger to charger.',
     pool: 'mild',
+    timed: false
+  },
+  LASERS: {
+    id: 'LASERS',
+    name: 'Lasers',
+    ink: '#E5383B',
+    darkText: false,
+    short: 'Beams you cannot cross. Anything solid in the way cuts them.',
+    rule: 'Each emitter fires a beam in a straight line until something solid stops it: a wall, a crate or puck, the drone, the echo, a closed door or gate, or you. Prisms bend beams. You cannot step into a beam, and the beams you see at the start of a move are the ones that count. Every 3 moves each emitter turns a quarter clockwise.',
+    tip: 'Park a crate, the drone or the echo in a beam to switch it off behind it.',
+    pool: 'core',
+    clashes: ['TURNTABLES'],
+    timed: true
+  },
+  TOW: {
+    id: 'TOW',
+    name: 'Tow',
+    ink: '#6D597A',
+    darkText: false,
+    short: 'Step away from a crate or puck next to you and it follows.',
+    rule: 'If a crate or puck is right behind you when you step directly away from it, it is dragged into the tile you just left. Pushing works as usual. A pulled puck moves one tile; it only slides when pushed.',
+    tip: 'Pulling is the only way to get a block out of a corner.',
+    pool: 'core',
+    hosts: ['CRATES', 'PUCKS'],
     timed: false
   }
 };

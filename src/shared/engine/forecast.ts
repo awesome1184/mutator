@@ -37,6 +37,8 @@ export type TurnInfo = {
   spinAfter: boolean;
   /** Blight spreads at the end of this move. */
   blightAfter: boolean;
+  /** Laser emitters turn at the end of this move (Lasers). */
+  lasersTurnAfter: boolean;
   /** Where the exit is for this move, as a well name (Hatches). */
   exitAt: string | null;
   /** Whether the exit is somewhere new on this move (Hatches). */
@@ -62,6 +64,7 @@ export function turnInfo(w: World, turn: number): TurnInfo {
     vents: h.VENTILATION ? ventsActive(turn) : null,
     spinAfter: w.hubs.length > 0 && (turn + 1) % 3 === 0,
     blightAfter: h.INFECTION === true && (turn + 1) % 2 === 0,
+    lasersTurnAfter: h.LASERS === true && (turn + 1) % 3 === 0,
     exitAt: h.HATCHES ? wellName(exitFor(w, turn)) : null,
     exitMoves: h.HATCHES === true && turn > 0 && exitFor(w, turn) !== exitFor(w, turn - 1)
   };

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { CELLS, DIRS, N, colOf, rowOf, stepIdx, dirBetween, delta, manhattan } from '../../shared/engine/grid.ts';
 import { MUTATIONS } from '../../shared/engine/mutations.ts';
 import { nextBlight, courierWaypoints, type Preview } from '../../shared/engine/forecast.ts';
-import { cellAt, massTier } from '../../shared/engine/sim.ts';
+import { cellAt, laserBeams, massTier } from '../../shared/engine/sim.ts';
 import type { Action, Dir, GameState, StepEvent } from '../../shared/engine/types.ts';
 import {
   activePhaseLayer,
@@ -15,6 +15,7 @@ import {
   portalMode,
   portalPartner,
   ventsActive,
+  emitterDir,
   exitFor,
   HATCH_PERIOD,
   shuttleAt,
@@ -74,6 +75,8 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
   }
   if (t.hatch !== null) out.push(`Hatch, closed. The exit opens here in ${t.hatch} ${t.hatch === 1 ? 'move' : 'moves'}.`);
   if (t.charger) out.push('Charger. End a move here to refill your charge.');
+  if (t.emitter) out.push(`Laser emitter, firing ${DIR_WORD[t.emitter]}. It turns a quarter clockwise every 3 moves.`);
+  if (t.lit) out.push('Laser beam. You cannot step into it. Anything solid in its path cuts it off.');
   if (w.has.WRAPAROUND && (rowOf(i) === 0 || rowOf(i) === N - 1 || colOf(i) === 0 || colOf(i) === N - 1))
     out.push('Edge tile. Moving off the board here brings you in on the opposite side.');
   if (s.drone === i) out.push('Mirror drone. Moves the opposite way to you. Solid.');
@@ -86,7 +89,9 @@ function describeTile(w: World, s: GameState, tiles: TileView[], i: number): str
     out.push(
       t.wallGlyph === 'magnet'
         ? 'Magnet. Pulls you 1 tile when you are in a clear line with it.'
-        : t.wallGlyph === 'hub'
+        : t.emitter
+          ? 'Wall.'
+          : t.wallGlyph === 'hub'
           ? 'Gear. The 4 tiles touching it rotate clockwise every 3 moves.'
           : t.wallGlyph === 'pylon'
             ? 'Tether pylon. You cannot walk out of the dashed zone around it.'
@@ -134,6 +139,9 @@ type TileView = {
   i: number;
   wall: boolean;
   wallGlyph: 'magnet' | 'hub' | 'pylon' | null;
+  /** Laser emitter and the way it faces now (Lasers). */
+  emitter: Dir | null;
+  lit: boolean;
   conv: Dir | null;
   ice: boolean;
   gate: { pol: number; closed: boolean } | null;
@@ -178,6 +186,7 @@ function buildTiles(w: World, s: GameState): TileView[] {
   const nextDepth = floodDepth(w, s.turn + 3 - (s.turn % 3));
   const bl = nextBlight(w, s);
   const exitNow = exitFor(w, s.turn);
+  const beams = w.emitters.length > 0 ? laserBeams(w, s).lit : null;
   const hatchIn = (h: number): number => {
     for (let k = 1; k <= HATCH_PERIOD * w.hatches.length; k++) if (exitFor(w, s.turn + k) === h) return k;
     return 0;
@@ -197,6 +206,11 @@ function buildTiles(w: World, s: GameState): TileView[] {
       i,
       wall: L.wall[i] === 1,
       wallGlyph: w.magnets.includes(i) ? 'magnet' : w.hubs.includes(i) ? 'hub' : w.tether === i ? 'pylon' : null,
+      emitter: (() => {
+        const e = w.emitters.find((x) => x.at === i);
+        return e ? emitterDir(e.dir, s.turn) : null;
+      })(),
+      lit: !!beams && beams[i] === 1,
       conv: (L.conv[i] as number) >= 0 ? (DIRS[L.conv[i] as number] as Dir) : null,
       ice: L.ice[i] === 1,
       gate: (L.gate[i] as number) >= 0 ? { pol: L.gate[i] as number, closed: L.gate[i] === closed } : null,
@@ -252,6 +266,12 @@ function Tile({ t }: { t: TileView }) {
             {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
               <rect key={a} x="46" y="23" width="8" height="10" rx="1.5" fill="currentColor" stroke="none" transform={`rotate(${a} 50 50)`} />
             ))}
+          </g>
+        )}
+        {t.emitter && (
+          <g transform={`rotate(${ROT[t.emitter]} 50 50)`} className="emitter">
+            <rect x="32" y="30" width="36" height="36" rx="6" />
+            <path d="M38 22h24l-5 -10h-14z" className="emitter-lens" />
           </g>
         )}
         {t.wallGlyph === 'pylon' && (
@@ -945,6 +965,15 @@ export function Board({ world, state, events, tick, bumps, lastDir, bumpDir, pre
               style={{ stroke: MUTATIONS.TETHER_PYLON.ink }}
             />
           )}
+          {world.emitters.length > 0 &&
+            laserBeams(world, state).paths.map((path, k) =>
+              path.length > 1 ? (
+                <g key={`laser${k}`} className="laser">
+                  <polyline points={path.map(centre).join(' ')} className="laser-glow" />
+                  <polyline points={path.map(centre).join(' ')} className="laser-core" />
+                </g>
+              ) : null
+            )}
           {beam && (
             <line
               x1={beam.axis === 'row' ? 8 : beam.index * 100 + 50}

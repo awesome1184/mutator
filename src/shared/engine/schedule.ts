@@ -34,8 +34,9 @@ export const TIERS: Record<number, Tier> = {
   0: { id: 'anomaly', label: 'Anomaly', slots: 3, par: [10, 22], walls: [2, 5], difficulty: 9 }
 };
 
-/** PAYLOAD_MASS only matters next to a force, so it is never a primary. */
-const PRIMARY_POOL: readonly MutationId[] = ALL_MUTATIONS.filter((m) => m !== 'PAYLOAD_MASS');
+/** Catalysts (mutations with hosts) only matter next to a host, so they are never a primary. */
+const isCatalyst = (m: MutationId): boolean => (MUTATIONS[m].hosts?.length ?? 0) > 0;
+const PRIMARY_POOL: readonly MutationId[] = ALL_MUTATIONS.filter((m) => !isCatalyst(m));
 
 export function isMild(m: MutationId): boolean {
   return MUTATIONS[m].pool === 'mild';
@@ -100,7 +101,7 @@ export function dayPlan(dateKey: string): DayPlan {
   avoid.add(rosterAt(dayIndex - 1));
   avoid.add(rosterAt(dayIndex + 1));
 
-  const hostPresent = fixed.some((m) => MUTATIONS.PAYLOAD_MASS.hosts?.includes(m));
+  const hostPresent = (c: MutationId): boolean => fixed.some((m) => MUTATIONS[c].hosts?.includes(m));
   const clash = (m: MutationId): boolean => fixed.some((f) => clashes(f, m));
   // Hidden pools: at most one mild mutation per puzzle, and none on Mondays.
   const mildTaken = tier.slots === 1 || fixed.some(isMild);
@@ -109,8 +110,8 @@ export function dayPlan(dateKey: string): DayPlan {
       !avoid.has(m) &&
       !clash(m) &&
       !(mildTaken && isMild(m)) &&
-      (m !== 'PAYLOAD_MASS' || hostPresent) &&
-      !(tier.slots === 1 && m === 'PAYLOAD_MASS')
+      (!isCatalyst(m) || hostPresent(m)) &&
+      !(tier.slots === 1 && isCatalyst(m))
   );
   const rng = new SeededRng(`mutator:candidates:${dateKey}`);
   let candidates = rng.shuffle(pool).slice(0, 3);

@@ -243,6 +243,20 @@ const GLYPHS: Record<MutationId, ReactElement> = {
       <rect x="3" y="7" width="16" height="10" rx="2" />
       <path d="M21 10.5v3M6.5 10v4" />
     </g>
+  ),
+  LASERS: (
+    <g {...P}>
+      <rect x="2.5" y="8.5" width="6" height="7" rx="1" />
+      <path d="M9 12h12" strokeDasharray="0" />
+      <path d="M17 9l4 3-4 3" />
+    </g>
+  ),
+  TOW: (
+    <g {...P}>
+      <rect x="13" y="8" width="8" height="8" rx="1" />
+      <circle cx="5" cy="12" r="3" />
+      <path d="M8 12h5" strokeDasharray="1.5 2" />
+    </g>
   )
 };
 
